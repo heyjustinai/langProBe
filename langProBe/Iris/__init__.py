@@ -9,11 +9,6 @@ benchmark = [
         IrisBench,
         [
             IrisPredict,
-            IrisCot,
-            IrisGeneratorCriticFuser,
-            IrisGeneratorCriticRanker,
-            IrisGeneratorCriticFuser_20,
-            IrisGeneratorCriticRanker_20,
         ],
         dspy.evaluate.answer_exact_match,
     )

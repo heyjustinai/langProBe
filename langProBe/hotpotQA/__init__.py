@@ -13,13 +13,6 @@ benchmark = [
         HotpotQABench,
         [
             HotPotQAPredict,
-            HotPotQACoT,
-            HotPotQARAG,
-            HotPotQASimplifiedBaleen,
-            HotPotQAGeneratorCriticRanker,
-            HotPotQAGeneratorCriticFuser,
-            HotPotQAGeneratorCriticFuser_20,
-            HotPotQAGeneratorCriticRanker_20,
         ],
         dspy.evaluate.answer_exact_match,
     )

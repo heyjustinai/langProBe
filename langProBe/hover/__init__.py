@@ -5,6 +5,6 @@ from .hover_utils import discrete_retrieval_eval
 
 benchmark = [
     BenchmarkMeta(
-        hoverBench, [HoverMultiHop(), HoverMultiHopPredict()], discrete_retrieval_eval
+        hoverBench, [HoverMultiHopPredict()], discrete_retrieval_eval
     )
 ]

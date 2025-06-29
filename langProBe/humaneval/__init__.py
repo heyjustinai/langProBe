@@ -12,12 +12,7 @@ benchmark = [
     BenchmarkMeta(
         HumanEvalBench,
         [
-            HumanEvalPredict,
-            HumanEvalCoT,
-            HumanEvalGeneratorCriticFuser,
-            HumanEvalGeneratorCriticRanker,
-            HumanEvalGeneratorCriticFuser_20,
-            HumanEvalGeneratorCriticRanker_20,
+            HumanEvalPredict
         ],
         human_eval_evaluate,
         num_threads=1,

@@ -22,11 +22,6 @@ benchmark = [
         JudgeBench,
         [
             JudgePredict,
-            JudgeCoT,
-            JudgeGeneratorCriticFuser,
-            JudgeGeneratorCriticRanker,
-            JudgeGeneratorCriticFuser_20,
-            JudgeGeneratorCriticRanker_20,
         ],
         llm_judge_eval,
     )
