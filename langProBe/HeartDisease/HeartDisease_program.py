@@ -1,5 +1,6 @@
 import dspy
 import langProBe.dspy_program as dspy_program
+from langProBe.dspy_program import LangProBeDSPyMetaProgram
 
 
 class HeartDiseaseInput(dspy.Signature):
