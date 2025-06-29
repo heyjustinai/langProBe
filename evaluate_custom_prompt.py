@@ -82,6 +82,13 @@ def main():
         default=None,
     )
     
+    parser.add_argument(
+        "--output_suffix",
+        help="Suffix to add to output filenames (e.g., for different prompt variations)",
+        type=str,
+        default=None,
+    )
+    
     args = parser.parse_args()
     
     # Validate that the prompt file exists
@@ -122,9 +129,17 @@ def main():
     current_time = datetime.datetime.now().strftime("%Y%m%d%H%M")
     file_path = args.file_path or f"evaluation_custom_prompt_{current_time}"
     
+    # Clear any existing result files to avoid cached contamination
+    if args.output_suffix:
+        print(f"🧹 Clearing cache for prompt variation: {args.output_suffix}")
+        # Clear DSPy history and cache to avoid contamination
+        if hasattr(dspy.settings, 'lm') and hasattr(dspy.settings.lm, 'history'):
+            dspy.settings.lm.history = []
+    
     # Run the evaluation directly without going through evaluate_all
     # This avoids the double registration issue
     for benchmark_meta in benchmarks:
+        print(f"🚀 Running evaluation for {benchmark_meta.name} with prompt: {args.output_suffix or 'default'}")
         evaluate(
             benchmark_meta,
             args.lm,
@@ -140,13 +155,58 @@ def main():
             api_base=args.lm_api_base,
         )
     
-    # Generate consolidated CSV results (similar to evaluate_all function)
+    # Generate CSV results with unique naming and strict filtering to avoid conflicts
     try:
         df = read_evaluation_results(file_path)
         df["model"] = args.lm
-        csv_path = f"{file_path}/evaluation_results.csv"
-        df.to_csv(csv_path, index=False)
+        
+        # Filter results to only include those relevant to this prompt run
+        if args.output_suffix:
+            csv_filename = f"evaluation_results_{args.output_suffix}.csv"
+            df["prompt_variation"] = args.output_suffix
+            
+            # Extract the prompt filename from args.prompt_file for filtering
+            prompt_filename = Path(args.prompt_file).name
+            
+            # Filter to only include results that match this specific prompt
+            # Include results with the custom prompt filename OR baseline results without custom prompts
+            custom_mask = df['file_name'].str.contains(prompt_filename.replace('.json', ''), na=False)
+            baseline_mask = (
+                (df['optimizer'] == 'Baseline') & 
+                (~df['file_name'].str.contains('CustomPrompt', na=False))
+            )
+            
+            # Keep either results from this specific prompt or genuine baseline results
+            filtered_df = df[custom_mask | baseline_mask].copy()
+            
+            print(f"📊 Filtered results: {len(filtered_df)} rows from {len(df)} total (prompt: {args.output_suffix})")
+            
+        else:
+            csv_filename = "evaluation_results.csv"
+            df["prompt_variation"] = "default"
+            filtered_df = df
+            
+        csv_path = f"{file_path}/{csv_filename}"
+        filtered_df.to_csv(csv_path, index=False)
         print(f"Evaluation results saved to CSV: {csv_path}")
+        
+        # Also update any JSON configuration files to include the suffix
+        if args.output_suffix:
+            # Look for generated JSON files and rename them to include the suffix
+            import glob
+            json_files = glob.glob(f"{file_path}/*_Predict_*.json")
+            for json_file in json_files:
+                if "CustomPrompt" in json_file and args.output_suffix not in json_file:
+                    # Create new filename with suffix
+                    base_name = Path(json_file).stem
+                    new_name = f"{base_name}_{args.output_suffix}.json"
+                    new_path = Path(json_file).parent / new_name
+                    
+                    # Copy the file with the new name
+                    import shutil
+                    shutil.copy2(json_file, new_path)
+                    print(f"JSON config saved with suffix: {new_path}")
+        
     except Exception as e:
         print(f"Warning: Could not generate CSV file: {e}")
     

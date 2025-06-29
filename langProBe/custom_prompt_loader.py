@@ -63,17 +63,39 @@ class CustomPromptLoader(Teleprompter):
                 
             # Apply the optimized prompt to the program
             if isinstance(optimized_data, dict):
-                # If the file contains a dspy.Module serialization
-                optimized_program = dspy.Module.load(optimized_data)
+                # Check if this is our structured prompt format
+                if 'instructions' in optimized_data:
+                    # Handle our custom JSON format: {"task_description": ..., "signature": ..., "instructions": ...}
+                    instructions = optimized_data['instructions']
+                    print(f"🔧 CustomPromptLoader: Applying custom instructions from {self.prompt_file_path}")
+                    print(f"📝 Instructions preview: {instructions[:100]}...")
+                    
+                    # Apply instructions to all predictors that have a signature with instructions
+                    for predictor in optimized_program.predictors():
+                        if hasattr(predictor, "signature") and hasattr(predictor.signature, "instructions"):
+                            predictor.signature.instructions = instructions
+                            print(f"✅ Applied custom instructions to {type(predictor).__name__}")
+                
+                elif 'traces' in optimized_data or 'signature' in optimized_data:
+                    # This looks like a dspy.Module serialization
+                    optimized_program = dspy.Module.load(optimized_data)
+                    print(f"🔧 CustomPromptLoader: Loaded DSPy module from {self.prompt_file_path}")
+                
+                else:
+                    print(f"⚠️  CustomPromptLoader: Unknown dict format in {self.prompt_file_path}")
+                    return program
+                    
             else:
-                # If the file contains just the instructions
+                # If the file contains just the instructions string
                 # Apply to all predictors that have a signature with instructions
+                print(f"🔧 CustomPromptLoader: Applying string instructions from {self.prompt_file_path}")
                 for predictor in optimized_program.predictors():
                     if hasattr(predictor, "signature") and hasattr(predictor.signature, "instructions"):
                         predictor.signature.instructions = optimized_data
+                        print(f"✅ Applied string instructions to {type(predictor).__name__}")
                         
         except Exception as e:
-            print(f"Error loading optimized prompt: {e}")
+            print(f"❌ Error loading optimized prompt: {e}")
             # Return the original program if loading fails
             return program
             
