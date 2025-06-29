@@ -21,3 +21,4 @@ data/
 
 .dspy_cache/
 .evaluation_*/
+**/cache.db
