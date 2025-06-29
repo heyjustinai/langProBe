@@ -9,6 +9,7 @@ langProBe/AppWorld/experiments/
 langProBe/AppWorld/.conda/
 *.csv
 *.png
+.env
 
 data/
 
