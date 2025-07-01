@@ -1,0 +1,18 @@
+benchmarks:
+- HeartDisease
+
+evaluation_config:
+  dataset_mode: test
+  lm: openrouter/meta-llama/llama-3.3-70b-instruct
+  num_threads: 2
+
+optimization:
+  base_url: https://openrouter.ai/api/v1
+  max_concurrent: 1
+  model: meta-llama/llama-3.3-70b-instruct
+  sample_size: 5
+  strategies:
+  - openai_v1_research_paper_generated_with_few_data
+  temperature: 0.3
+
+output_dir: meta-optimize-prompt

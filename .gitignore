@@ -22,3 +22,7 @@ data/
 .dspy_cache/
 .evaluation_*/
 **/cache.db
+
+# hide results
+meta-optimize-prompt/generated/*
+docs/
