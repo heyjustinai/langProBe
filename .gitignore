@@ -26,3 +26,6 @@ data/
 # hide results
 meta-optimize-prompt/generated/*
 docs/
+
+# misc folder - experimental/reference code
+misc/
