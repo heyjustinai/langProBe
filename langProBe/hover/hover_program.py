@@ -3,14 +3,35 @@ from langProBe.dspy_program import LangProBeDSPyMetaProgram
 
 
 class HoverMultiHopPredict(LangProBeDSPyMetaProgram, dspy.Module):
-    def __init__(self):
+    def __init__(self, optimized_prompts=None):
         super().__init__()
         self.k = 7
+        
+        # Initialize predictors
         self.create_query_hop2 = dspy.Predict("claim,summary_1->query")
         self.create_query_hop3 = dspy.Predict("claim,summary_1,summary_2->query")
         self.retrieve_k = dspy.Retrieve(k=self.k)
         self.summarize1 = dspy.Predict("claim,passages->summary")
         self.summarize2 = dspy.Predict("claim,context,passages->summary")
+        
+        # Apply optimized prompts if provided
+        if optimized_prompts:
+            if isinstance(optimized_prompts, dict):
+                # Handle dict format
+                if "summarize1" in optimized_prompts:
+                    self.summarize1.signature.instructions = optimized_prompts["summarize1"]
+                if "summarize2" in optimized_prompts:
+                    self.summarize2.signature.instructions = optimized_prompts["summarize2"]
+                if "query_hop2" in optimized_prompts:
+                    self.create_query_hop2.signature.instructions = optimized_prompts["query_hop2"]
+                if "query_hop3" in optimized_prompts:
+                    self.create_query_hop3.signature.instructions = optimized_prompts["query_hop3"]
+            elif isinstance(optimized_prompts, list) and len(optimized_prompts) >= 4:
+                # Handle list format for backward compatibility
+                self.summarize1.signature.instructions = optimized_prompts[0]
+                self.summarize2.signature.instructions = optimized_prompts[1]
+                self.create_query_hop2.signature.instructions = optimized_prompts[2]
+                self.create_query_hop3.signature.instructions = optimized_prompts[3]
 
     def forward(self, claim):
         # HOP 1
@@ -36,14 +57,35 @@ class HoverMultiHopPredict(LangProBeDSPyMetaProgram, dspy.Module):
 
 
 class HoverMultiHop(LangProBeDSPyMetaProgram, dspy.Module):
-    def __init__(self):
+    def __init__(self, optimized_prompts=None):
         super().__init__()
         self.k = 7
+        
+        # Initialize predictors
         self.create_query_hop2 = dspy.ChainOfThought("claim,summary_1->query")
         self.create_query_hop3 = dspy.ChainOfThought("claim,summary_1,summary_2->query")
         self.retrieve_k = dspy.Retrieve(k=self.k)
         self.summarize1 = dspy.ChainOfThought("claim,passages->summary")
         self.summarize2 = dspy.ChainOfThought("claim,context,passages->summary")
+        
+        # Apply optimized prompts if provided
+        if optimized_prompts:
+            if isinstance(optimized_prompts, dict):
+                # Handle dict format
+                if "summarize1" in optimized_prompts:
+                    self.summarize1.signature.instructions = optimized_prompts["summarize1"]
+                if "summarize2" in optimized_prompts:
+                    self.summarize2.signature.instructions = optimized_prompts["summarize2"]
+                if "query_hop2" in optimized_prompts:
+                    self.create_query_hop2.signature.instructions = optimized_prompts["query_hop2"]
+                if "query_hop3" in optimized_prompts:
+                    self.create_query_hop3.signature.instructions = optimized_prompts["query_hop3"]
+            elif isinstance(optimized_prompts, list) and len(optimized_prompts) >= 4:
+                # Handle list format for backward compatibility
+                self.summarize1.signature.instructions = optimized_prompts[0]
+                self.summarize2.signature.instructions = optimized_prompts[1]
+                self.create_query_hop2.signature.instructions = optimized_prompts[2]
+                self.create_query_hop3.signature.instructions = optimized_prompts[3]
 
     def forward(self, claim):
         # HOP 1

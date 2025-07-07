@@ -1,0 +1,75 @@
+# Prompt extraction rules for benchmarks with non-standard patterns
+extraction_rules:
+  hover:
+    type: "string_signatures"
+    description: "Multi-hop fact verification benchmark"
+    signatures:
+      - name: "SummarizePassages"
+        pattern: "claim,passages->summary"
+        instruction: "Summarize passages that are relevant to the given claim."
+        input_fields: ["claim", "passages"]
+        output_fields: ["summary"]
+        signature_key: "summarize1"
+      - name: "SummarizeWithContext"
+        pattern: "claim,context,passages->summary"
+        instruction: "Summarize passages with additional context about the claim."
+        input_fields: ["claim", "context", "passages"]
+        output_fields: ["summary"]
+        signature_key: "summarize2"
+      - name: "GenerateQueryHop2"
+        pattern: "claim,summary_1->query"
+        instruction: "Generate a search query based on the claim and initial summary."
+        input_fields: ["claim", "summary_1"]
+        output_fields: ["query"]
+        signature_key: "query_hop2"
+      - name: "GenerateQueryHop3"
+        pattern: "claim,summary_1,summary_2->query"
+        instruction: "Generate a refined search query based on claim and multiple summaries."
+        input_fields: ["claim", "summary_1", "summary_2"]
+        output_fields: ["query"]
+        signature_key: "query_hop3"
+    default_prompt: "Summarize passages that are relevant to the given claim."
+    
+  IReRa:
+    type: "utils_signatures"
+    description: "Information extraction and reasoning benchmark"
+    datasets:
+      esco_tech:
+        instruction: "Given a snippet from a job vacancy, identify all the ESCO job skills mentioned. Always return skills."
+        input_fields: ["text"]
+        output_fields: ["output"]
+      esco_house:
+        instruction: "Given a snippet from a job vacancy, identify all the ESCO job skills mentioned. Always return skills."
+        input_fields: ["text"]
+        output_fields: ["output"]
+      biodex_reactions:
+        instruction: "Given a snippet from a medical article, identify the adverse drug reactions affecting the patient. Always return reactions."
+        input_fields: ["text"]
+        output_fields: ["output"]
+    default_dataset: "esco_tech"
+    utils_file: "irera_utils.py"
+    signature_classes:
+      - "InferSignatureESCO"
+      - "InferSignatureBioDEX"
+      - "RankSignatureESCO"
+      - "RankSignatureBioDEX"
+
+# Standard benchmarks (for reference)
+standard_benchmarks:
+  - HeartDisease
+  - judgebench
+  - MMLU
+  - humaneval
+  - gsm8k
+  - MATH
+  - MedQA
+  - MedMCQA
+  - PubMedQA
+  - scone
+  - hotpotQA
+
+# Global settings
+settings:
+  fallback_to_standard: true
+  use_adapters: true
+  enhanced_extraction: true 

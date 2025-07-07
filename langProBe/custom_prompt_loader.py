@@ -76,6 +76,38 @@ class CustomPromptLoader(Teleprompter):
                             predictor.signature.instructions = instructions
                             print(f"✅ Applied custom instructions to {type(predictor).__name__}")
                 
+                elif 'multi_signature' in optimized_data and optimized_data['multi_signature']:
+                    # Handle multi-signature prompts (e.g., for hover)
+                    prompts = optimized_data.get('prompts', {})
+                    print(f"🔧 CustomPromptLoader: Applying multi-signature prompts from {self.prompt_file_path}")
+                    print(f"📝 Found prompts for: {list(prompts.keys())}")
+                    
+                    # Special handling for hover benchmark
+                    if hasattr(optimized_program, 'summarize1') and 'summarize1' in prompts:
+                        optimized_program.summarize1.signature.instructions = prompts['summarize1']
+                        print(f"✅ Applied custom instructions to summarize1")
+                    
+                    if hasattr(optimized_program, 'summarize2') and 'summarize2' in prompts:
+                        optimized_program.summarize2.signature.instructions = prompts['summarize2']
+                        print(f"✅ Applied custom instructions to summarize2")
+                    
+                    if hasattr(optimized_program, 'create_query_hop2') and 'query_hop2' in prompts:
+                        optimized_program.create_query_hop2.signature.instructions = prompts['query_hop2']
+                        print(f"✅ Applied custom instructions to create_query_hop2")
+                    
+                    if hasattr(optimized_program, 'create_query_hop3') and 'query_hop3' in prompts:
+                        optimized_program.create_query_hop3.signature.instructions = prompts['query_hop3']
+                        print(f"✅ Applied custom instructions to create_query_hop3")
+                    
+                    # Also check if the program accepts optimized_prompts parameter
+                    if hasattr(optimized_program, '__init__'):
+                        try:
+                            # Try to create a new instance with optimized prompts
+                            optimized_program = optimized_program.__class__(optimized_prompts=prompts)
+                            print(f"✅ Created new program instance with optimized prompts")
+                        except Exception as e:
+                            print(f"⚠️  Could not create new instance with prompts: {e}")
+                
                 elif 'traces' in optimized_data or 'signature' in optimized_data:
                     # This looks like a dspy.Module serialization
                     optimized_program = dspy.Module.load(optimized_data)

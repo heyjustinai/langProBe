@@ -19,14 +19,26 @@ class PromptConfig:
     task_description: Optional[str] = None
     signature: Optional[str] = None
     meta_strategy: Optional[str] = None
+    multi_signature: bool = False
+    signature_prompts: Optional[Dict[str, str]] = None
     
     def to_json_file(self, filepath: Path) -> None:
         """Save prompt config as JSON file compatible with evaluation system."""
-        config_data = {
-            "task_description": self.task_description or f"{self.name} prompt variation",
-            "signature": self.signature or "Input -> Output",
-            "instructions": self.instructions
-        }
+        if self.multi_signature and self.signature_prompts:
+            # For multi-signature benchmarks, save the prompts dict directly
+            config_data = {
+                "task_description": self.task_description or f"{self.name} prompt variation",
+                "signature": self.signature or "Multiple signatures",
+                "multi_signature": True,
+                "prompts": self.signature_prompts
+            }
+        else:
+            # Standard single-signature format
+            config_data = {
+                "task_description": self.task_description or f"{self.name} prompt variation",
+                "signature": self.signature or "Input -> Output",
+                "instructions": self.instructions
+            }
         
         with open(filepath, 'w') as f:
             json.dump(config_data, f, indent=2)

@@ -1,17 +1,22 @@
 benchmarks:
-- HeartDisease
+- hover
 evaluation_config:
   dataset_mode: test
   lm: openrouter/meta-llama/llama-3.3-70b-instruct
-  num_threads: 2
-  max_concurrent_processes: 2
+  num_threads: 256
+  max_concurrent_processes: 8
 optimization:
   base_url: https://openrouter.ai/api/v1
-  max_concurrent: 1
+  max_concurrent: 48
   model: meta-llama/llama-3.3-70b-instruct
-  sample_size: 5
+  sample_size: 25
   strategies:
+  - openai_v2_research_paper_generated_with_few_data
   - openai_v1_research_paper_generated_with_few_data
+  - gemini2.5_research_paper_generated_with_few_data
+  - metaai_research_paper_generated_with_few_data
+  - self_written
+  - self_written_2
+  - llama_405b
   temperature: 0.3
-
 output_dir: meta-optimize-prompt

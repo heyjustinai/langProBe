@@ -49,9 +49,9 @@ class EvaluationOrchestrator:
             Dictionary with pipeline results and metadata
         """
         
-        print("🚀 Starting Full Prompt Optimization Pipeline")
-        print(f"📋 Configuration: {self.config.version}")
-        print(f"🎯 Target benchmarks: {selected_benchmarks or self.config.benchmarks or 'All discovered'}")
+        print(" Starting Full Prompt Optimization Pipeline")
+        print(f" Configuration: {self.config.version}")
+        print(f" Target benchmarks: {selected_benchmarks or self.config.benchmarks or 'All discovered'}")
         
         results = {
             "version": self.config.version,
@@ -64,7 +64,7 @@ class EvaluationOrchestrator:
             # Stage 1: Extract prompts from benchmarks
             if extract_prompts:
                 print(f"\n{'='*60}")
-                print("🔍 STAGE 1: Extracting Default Prompts")
+                print("STAGE 1: Extracting Default Prompts")
                 print(f"{'='*60}")
                 
                 extracted_configs = self._extract_benchmark_prompts(selected_benchmarks)
@@ -86,7 +86,7 @@ class EvaluationOrchestrator:
             # Stage 2: Optimize prompts using meta-strategies
             if optimize_prompts:
                 print(f"\n{'='*60}")
-                print("🧠 STAGE 2: Meta-Prompt Optimization")
+                print("STAGE 2: Meta-Prompt Optimization")
                 print(f"{'='*60}")
                 
                 optimized_configs = self.optimizer.optimize_benchmark_prompts(extracted_configs)
@@ -112,7 +112,7 @@ class EvaluationOrchestrator:
             # Stage 3: Save optimized prompts
             if save_prompts:
                 print(f"\n{'='*60}")
-                print("💾 STAGE 3: Saving Optimized Prompts")
+                print("STAGE 3: Saving Optimized Prompts")
                 print(f"{'='*60}")
                 
                 version_dir = self.manager.save_optimized_prompts(
@@ -139,7 +139,7 @@ class EvaluationOrchestrator:
             # Stage 4: Run multi-benchmark evaluation
             if run_evaluation and version_dir:
                 print(f"\n{'='*60}")
-                print("📊 STAGE 4: Multi-Benchmark Evaluation")
+                print("STAGE 4: Multi-Benchmark Evaluation")
                 print(f"{'='*60}")
                 
                 evaluation_results = self._run_multi_benchmark_evaluation(version_dir, optimized_configs)
@@ -182,13 +182,13 @@ class EvaluationOrchestrator:
             
             missing = set(target_benchmarks) - set(filtered.keys())
             if missing:
-                print(f"⚠️  Could not extract prompts for: {missing}")
+                print(f"  Could not extract prompts for: {missing}")
             
-            print(f"🎯 Filtering to configured benchmarks: {target_benchmarks}")
+            print(f" Filtering to configured benchmarks: {target_benchmarks}")
             return filtered
         
         # If no benchmarks specified anywhere, extract all
-        print("🌍 No benchmarks specified - extracting all available")
+        print("No benchmarks specified - extracting all available")
         return all_extracted
     
     def _create_minimal_configs(self, benchmark_names: List[str]) -> Dict[str, Any]:
@@ -249,57 +249,78 @@ class EvaluationOrchestrator:
         evaluation_script = self._generate_evaluation_script(version_dir, benchmark_configs)
         
         try:
-            print(f"🔧 Running evaluation script: {evaluation_script}")
+            print(f" Running evaluation script: {evaluation_script}")
             
             # Set environment variables (convert all values to strings)
             env = os.environ.copy()
             for key, value in self.config.evaluation_config.items():
                 env[key] = str(value)
             
-            # Run the evaluation
-            result = subprocess.run(
-                ["python", str(evaluation_script)],
-                capture_output=True,
-                text=True,
+            # Force unbuffered output
+            env['PYTHONUNBUFFERED'] = '1'
+            
+            # Set the num_threads environment variable for thread distribution
+            if 'num_threads' in self.config.evaluation_config:
+                print(f"🧵 Using {self.config.evaluation_config['num_threads']} threads from config")
+                env['num_threads'] = str(self.config.evaluation_config['num_threads'])
+            
+            # Set the max_concurrent_processes environment variable
+            if 'max_concurrent_processes' in self.config.evaluation_config:
+                print(f"🔄 Using {self.config.evaluation_config['max_concurrent_processes']} max concurrent processes from config")
+                env['max_concurrent_processes'] = str(self.config.evaluation_config['max_concurrent_processes'])
+            
+            # Set other evaluation config environment variables
+            if 'dataset_mode' in self.config.evaluation_config:
+                print(f"📊 Using dataset_mode: {self.config.evaluation_config['dataset_mode']} from config")
+                env['dataset_mode'] = str(self.config.evaluation_config['dataset_mode'])
+            
+            if 'lm' in self.config.evaluation_config:
+                print(f"🤖 Using LM: {self.config.evaluation_config['lm']} from config")
+                env['lm'] = str(self.config.evaluation_config['lm'])
+            
+            if 'lm_api_base' in self.config.evaluation_config:
+                print(f"🌐 Using API base: {self.config.evaluation_config['lm_api_base']} from config")
+                env['lm_api_base'] = str(self.config.evaluation_config['lm_api_base'])
+            
+            # Run the evaluation with real-time output
+            process = subprocess.Popen(
+                ["python", "-u", str(evaluation_script)],  # -u for unbuffered
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr with stdout
+                universal_newlines=True,
                 env=env,
-                timeout=3600  # 1 hour timeout
+                bufsize=0  # Unbuffered
             )
             
-            if result.returncode == 0:
-                print("✅ Evaluation completed successfully")
-                
-                # Show the evaluation output, especially the performance ranking
-                output_lines = result.stdout.strip().split('\n')
-                
-                # Find and display the consolidation and performance ranking section
-                in_consolidation = False
-                for line in output_lines:
-                    if "🔗 Consolidating results per benchmark" in line:
-                        in_consolidation = True
-                    
-                    if in_consolidation:
-                        print(line)
+            # Read output in real-time using iter() approach
+            print("    📋 Starting evaluation...")
+            
+            full_output = []
+            for line in iter(process.stdout.readline, ''):
+                full_output.append(line)
+                # Print the line in real-time with proper indentation
+                print(f"    {line.rstrip()}")
+            
+            # Wait for process to finish
+            process.wait()
+            stdout_text = ''.join(full_output)
+            
+            if process.returncode == 0:
+                print("\n✅ Evaluation completed successfully")
                 
                 return {
                     "success": True,
-                    "output": result.stdout[-1000:],  # Last 1000 chars
+                    "output": stdout_text,
                     "evaluation_script": str(evaluation_script)
                 }
             else:
-                print(f"❌ Evaluation failed with return code: {result.returncode}")
-                print(f"Error output: {result.stderr}")
+                print(f"\n❌ Evaluation failed with return code: {process.returncode}")
                 return {
                     "success": False,
-                    "error": result.stderr,
-                    "return_code": result.returncode
+                    "error": "See output above for details",
+                    "return_code": process.returncode
                 }
                 
-        except subprocess.TimeoutExpired:
-            print("❌ Evaluation timed out after 1 hour")
-            return {
-                "success": False,
-                "error": "Evaluation timed out"
-            }
         except Exception as e:
             print(f"❌ Error running evaluation: {e}")
             return {
@@ -343,6 +364,9 @@ import sys
 import os
 import time
 from pathlib import Path
+
+# Force unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
 
 # Configuration for benchmark-prompt mappings
 BENCHMARK_CONFIGS = {template_configs}
@@ -431,6 +455,7 @@ def convert_txt_to_csv(benchmark_dir: Path, prompt_name: str) -> bool:
                             
         except Exception as e:
             print(f"    ⚠️  Error reading {{txt_file.name}}: {{e}}")
+            sys.stdout.flush()
             continue
     
     if csv_rows:
@@ -445,12 +470,14 @@ def convert_txt_to_csv(benchmark_dir: Path, prompt_name: str) -> bool:
                     writer.writeheader()
                     writer.writerows(csv_rows)
             
-            print(f"    🔄 Converted {{len(txt_files)}} TXT files to CSV: {{csv_path.name}}")
-            print(f"    📊 Generated {{len(csv_rows)}} result rows")
+            print(f"    Converted {{len(txt_files)}} TXT files to CSV: {{csv_path.name}}")
+            print(f"    Generated {{len(csv_rows)}} result rows")
+            sys.stdout.flush()
             return True
             
         except Exception as e:
             print(f"    ❌ Error writing CSV file: {{e}}")
+            sys.stdout.flush()
             return False
     
     return False
@@ -462,18 +489,26 @@ def main():
     script_dir = Path(__file__).parent
     os.chdir(script_dir)
     
+    # Save the current directory for later reference
+    version_dir = script_dir
+    
     # Flatten configurations
     all_configs = flatten_benchmark_prompt_configs(BENCHMARK_CONFIGS)
     
-    # Base arguments
-    base_args = [
-        "--dataset_mode=test",
-        "--lm=openrouter/meta-llama/llama-3.3-70b-instruct",
-        "--lm_api_base=https://openrouter.ai/api/v1",
-                 f"--lm_api_key={os.getenv('OPENROUTER_API_KEY')}"
-    ]
+    # Convert relative paths to absolute paths
+    for config in all_configs:
+        config["prompt_file"] = str(version_dir / config["prompt_file"])
     
-    print(f"🎯 Running evaluation for {{len(all_configs)}} prompt variations")
+    # Change to a temporary directory to avoid dataset loading conflicts
+    # (HuggingFace datasets can get confused by local directories with dataset names)
+    import tempfile
+    temp_dir = tempfile.mkdtemp(prefix="langprobe_eval_")
+    os.chdir(temp_dir)
+    print(f"📁 Working directory: {{temp_dir}}")
+    sys.stdout.flush()
+    
+    # Calculate optimal thread distribution based on concurrent processes
+    total_threads = int(os.getenv('num_threads', '8'))
     
     # Group configs by benchmark to manage rate limiting better
     from collections import defaultdict
@@ -481,22 +516,51 @@ def main():
     for config in all_configs:
         configs_by_benchmark[config["benchmark"]].append(config)
     
-    print(f"📊 Benchmarks to evaluate: {{list(configs_by_benchmark.keys())}}")
+    # Determine max concurrent processes per benchmark from environment
+    max_concurrent_per_benchmark = int(os.getenv('max_concurrent_processes', '2'))
+    
+    # Calculate threads per process to avoid oversubscription
+    threads_per_process = max(1, total_threads // max_concurrent_per_benchmark)
+    print(f"🧵 Thread allocation: {{total_threads}} total threads ÷ {{max_concurrent_per_benchmark}} concurrent processes = {{threads_per_process}} threads per process")
+    sys.stdout.flush()
+    
+    # Base arguments using config values
+    dataset_mode = os.getenv('dataset_mode', 'test')
+    lm_model = os.getenv('lm', 'openrouter/meta-llama/llama-3.3-70b-instruct')
+    lm_api_base = os.getenv('lm_api_base', 'https://openrouter.ai/api/v1')
+    
+    base_args = [
+        f"--dataset_mode={{dataset_mode}}",
+        f"--lm={{lm_model}}",
+        f"--lm_api_base={{lm_api_base}}",
+        f"--lm_api_key={{os.getenv('OPENROUTER_API_KEY')}}",
+        f"--num_threads={{threads_per_process}}"
+    ]
+    
+    print(f"🎯 Running evaluation for {{len(all_configs)}} prompt variations")
+    sys.stdout.flush()
+    
+    print(f" Benchmarks to evaluate: {{list(configs_by_benchmark.keys())}}")
+    sys.stdout.flush()
     
     # Set up environment
     env = os.environ.copy()
+    env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output for subprocesses
     all_results = []
     
     # Process benchmarks sequentially to avoid overwhelming the API
     for benchmark, benchmark_configs in configs_by_benchmark.items():
-        print(f"\\n🚀 Starting {{benchmark}} evaluation ({{len(benchmark_configs)}} variations)")
+        print(f"\\n Starting {{benchmark}} evaluation ({{len(benchmark_configs)}} variations)")
+        sys.stdout.flush()
         
         processes = []
         start_time = time.time()
         successful = 0
         
-        # Start processes with rate limiting (max 2 concurrent per benchmark)
-        max_concurrent = min(2, len(benchmark_configs))
+        # Start processes with rate limiting (max concurrent per benchmark)
+        # Read from environment to ensure consistency with thread calculation
+        max_concurrent_per_benchmark = int(os.getenv('max_concurrent_processes', '2'))
+        max_concurrent = min(max_concurrent_per_benchmark, len(benchmark_configs))
         
         for i, config in enumerate(benchmark_configs):
             prompt_name = config["prompt_name"]
@@ -506,10 +570,11 @@ def main():
             # Check if prompt file exists
             if not Path(prompt_file).exists():
                 print(f"❌ Error: Prompt file {{prompt_file}} not found for {{run_id}}!")
+                sys.stdout.flush()
                 continue
             
-            # Create output directory
-            output_path = create_output_directory("evaluation_results", benchmark)
+            # Create output directory (use absolute path since we're in temp dir)
+            output_path = create_output_directory(str(version_dir / "evaluation_results"), benchmark)
             
             # Set unique cache directory for each run to prevent conflicts
             timestamp = str(int(time.time() * 1000))  # millisecond timestamp
@@ -522,9 +587,10 @@ def main():
             run_env.pop("DSPY_CACHE_SUFFIX", None)
             run_env.pop("DSPY_OUTPUT_PREFIX", None)
             
-            # Build command with explicit output path control
+            # Build command with explicit output path control (use absolute path)
+            # Use python -u for unbuffered output
             cmd = [
-                "python", "../../../evaluate_custom_prompt.py",
+                "python", "-u", str(version_dir / "../../../evaluate_custom_prompt.py"),
                 f"--prompt_file={{prompt_file}}",
                 f"--benchmarks={{benchmark}}",
                 f"--file_path={{output_path}}",
@@ -533,6 +599,7 @@ def main():
             ]
             
             print(f"🔧 Starting [{{run_id}}] (batch {{i+1}}/{{len(benchmark_configs)}})")
+            sys.stdout.flush()
             
             try:
                 process = subprocess.Popen(
@@ -556,11 +623,12 @@ def main():
                         run_id = proc_info['run_id']
                         duration = time.time() - proc_info['start_time']
                         
-                        # Check for timeout (15 minutes per evaluation)
-                        timeout_limit = 900  # 15 minutes in seconds
+                        # Check for timeout (4 hours per evaluation for full datasets)
+                        timeout_limit = 14400  # 4 hours in seconds
                         
                         if duration > timeout_limit:
-                            print(f"⏰ [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                            print(f" [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                            sys.stdout.flush()
                             try:
                                 process.terminate()
                                 time.sleep(2)  # Give it a moment to terminate gracefully
@@ -569,6 +637,7 @@ def main():
                                 all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': 'Timeout'}})
                             except Exception as e:
                                 print(f"    ⚠️  Error terminating process: {{e}}")
+                                sys.stdout.flush()
                                 all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': f'Timeout + termination error: {{e}}'}})
                             processes.pop(j)
                             break
@@ -582,7 +651,7 @@ def main():
                             
                             if process.returncode == 0:
                                 # Validate that files were actually created
-                                output_path = Path("evaluation_results") / proc_info['config']['benchmark']
+                                output_path = version_dir / "evaluation_results" / proc_info['config']['benchmark']
                                 prompt_name = proc_info['config']['prompt_name']
                                 
                                 # Check for expected output files
@@ -591,11 +660,13 @@ def main():
                                 
                                 if csv_file.exists() or txt_files:
                                     print(f"✅ [{{run_id}}] SUCCESS ({{duration:.1f}}s) - Files generated")
+                                    sys.stdout.flush()
                                     successful += 1
                                     all_results.append({{**proc_info['config'], 'success': True, 'duration': duration}})
                                 else:
                                     print(f"⚠️  [{{run_id}}] SUCCESS but no output files ({{duration:.1f}}s)")
                                     print(f"    Expected: {{csv_file}}")
+                                    sys.stdout.flush()
                                     all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
                             else:
                                 print(f"❌ [{{run_id}}] FAILED ({{duration:.1f}}s)")
@@ -603,6 +674,7 @@ def main():
                                     # Show last part of error message
                                     error_lines = stderr.strip().split('\\n')
                                     print(f"    Error: {{error_lines[-1] if error_lines else 'Unknown error'}}")
+                                sys.stdout.flush()
                                 all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
                             
                             processes.pop(j)
@@ -613,7 +685,8 @@ def main():
                         if int(time.time()) % 30 == 0:
                             for proc_info in processes:
                                 runtime = time.time() - proc_info['start_time']
-                                print(f"    🔄 [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                                print(f"    [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                            sys.stdout.flush()
                         time.sleep(1)  # Brief pause to avoid busy waiting
                 
                 # Small delay between starting processes to avoid overwhelming the API
@@ -621,6 +694,7 @@ def main():
                 
             except Exception as e:
                 print(f"❌ Failed to start {{run_id}}: {{e}}")
+                sys.stdout.flush()
                 all_results.append({{**config, 'success': False, 'duration': 0}})
         
         # Wait for remaining processes in this benchmark to complete
@@ -630,11 +704,12 @@ def main():
                 run_id = proc_info['run_id']
                 duration = time.time() - proc_info['start_time']
                 
-                # Check for timeout (15 minutes per evaluation)
-                timeout_limit = 900  # 15 minutes in seconds
+                # Check for timeout (4 hours per evaluation for full datasets)
+                timeout_limit = 14400  # 4 hours in seconds
                 
                 if duration > timeout_limit:
-                    print(f"⏰ [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                    print(f"[{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                    sys.stdout.flush()
                     try:
                         process.terminate()
                         time.sleep(2)  # Give it a moment to terminate gracefully
@@ -643,6 +718,7 @@ def main():
                         all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': 'Timeout'}})
                     except Exception as e:
                         print(f"    ⚠️  Error terminating process: {{e}}")
+                        sys.stdout.flush()
                         all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': f'Timeout + termination error: {{e}}'}})
                     processes.pop(i)
                     break
@@ -656,7 +732,7 @@ def main():
                     
                     if process.returncode == 0:
                         # Validate that files were actually created
-                        output_path = Path("evaluation_results") / proc_info['config']['benchmark']
+                        output_path = version_dir / "evaluation_results" / proc_info['config']['benchmark']
                         prompt_name = proc_info['config']['prompt_name']
                         
                         # Check for expected output files
@@ -665,11 +741,13 @@ def main():
                         
                         if csv_file.exists() or txt_files:
                             print(f"✅ [{{run_id}}] SUCCESS ({{duration:.1f}}s) - Files generated")
+                            sys.stdout.flush()
                             successful += 1
                             all_results.append({{**proc_info['config'], 'success': True, 'duration': duration}})
                         else:
                             print(f"⚠️  [{{run_id}}] SUCCESS but no output files ({{duration:.1f}}s)")
                             print(f"    Expected: {{csv_file}}")
+                            sys.stdout.flush()
                             all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
                     else:
                         print(f"❌ [{{run_id}}] FAILED ({{duration:.1f}}s)")
@@ -677,6 +755,7 @@ def main():
                             # Show last part of error message
                             error_lines = stderr.strip().split('\\n')
                             print(f"    Error: {{error_lines[-1] if error_lines else 'Unknown error'}}")
+                        sys.stdout.flush()
                         all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
                     
                     processes.pop(i)
@@ -686,47 +765,53 @@ def main():
             if len(processes) > 0 and int(time.time()) % 30 == 0:
                 for proc_info in processes:
                     runtime = time.time() - proc_info['start_time']
-                    print(f"    🔄 [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                    print(f"    [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                sys.stdout.flush()
             
             time.sleep(2)
         
         benchmark_time = time.time() - start_time
         success_rate = successful / len(benchmark_configs) * 100
         
-        print(f"📊 {{benchmark}} completed: {{successful}}/{{len(benchmark_configs)}} ({{success_rate:.1f}}%) in {{benchmark_time:.1f}}s")
+        print(f"{{benchmark}} completed: {{successful}}/{{len(benchmark_configs)}} ({{success_rate:.1f}}%) in {{benchmark_time:.1f}}s")
+        sys.stdout.flush()
         
         # Brief pause between benchmarks
         if len(configs_by_benchmark) > 1:
             print(f"⏸️  Pausing 3 seconds before next benchmark...")
+            sys.stdout.flush()
             time.sleep(3)
     
     total_successful = sum(1 for r in all_results if r['success'])
     total_time = sum(r['duration'] for r in all_results)
     
     print(f"\\n============================================================")
-    print(f"📊 FINAL EVALUATION SUMMARY")
+    print(f"FINAL EVALUATION SUMMARY")
     print(f"============================================================")
     print(f"✅ Successful: {{total_successful}}/{{len(all_configs)}}")
     print(f"❌ Failed: {{len(all_configs) - total_successful}}/{{len(all_configs)}}")
-    print(f"⏱️  Total time: {{total_time:.1f}} seconds")
-    print(f"📁 Results saved to: evaluation_results/")
+    print(f" Total time: {{total_time:.1f}} seconds")
+    print(f"Results saved to: evaluation_results/")
+    sys.stdout.flush()
     
     # Show breakdown by benchmark
     for benchmark in configs_by_benchmark.keys():
         benchmark_results = [r for r in all_results if r['benchmark'] == benchmark]
         benchmark_successful = sum(1 for r in benchmark_results if r['success'])
-        print(f"  📊 {{benchmark}}: {{benchmark_successful}}/{{len(benchmark_results)}} successful")
+        print(f"  {{benchmark}}: {{benchmark_successful}}/{{len(benchmark_results)}} successful")
+    sys.stdout.flush()
     
     # Consolidate all individual CSV files into one master file
     if total_successful > 0:
-        consolidate_results(all_configs)
+        consolidate_results(all_configs, version_dir)
 
-def consolidate_results(configs):
+def consolidate_results(configs, version_dir):
     """Consolidate individual CSV files into per-benchmark master files."""
     import csv
     from collections import defaultdict
     
-    print(f"\\n🔗 Consolidating results per benchmark...")
+    print(f"\\n Consolidating results per benchmark...")
+    sys.stdout.flush()
     
     # Group configs by benchmark
     benchmark_configs = defaultdict(list)
@@ -737,6 +822,21 @@ def consolidate_results(configs):
     
     for benchmark, benchmark_configs_list in benchmark_configs.items():
         print(f"\\n📊 Processing benchmark: {{benchmark}}")
+        sys.stdout.flush()
+        
+        # Try to get test set size from stats file
+        test_set_size = None
+        benchmark_dir = version_dir / "evaluation_results" / benchmark
+        stat_files = list(benchmark_dir.glob("*.stat"))
+        if stat_files:
+            try:
+                with open(stat_files[0], 'r') as f:
+                    for line in f:
+                        if line.startswith('test_set_size:'):
+                            test_set_size = int(line.split(':')[1].strip())
+                            break
+            except:
+                pass
         
         benchmark_rows = []
         benchmark_stats = {{}}
@@ -745,7 +845,7 @@ def consolidate_results(configs):
             prompt_name = config["prompt_name"]
             
             # Look for the individual result file
-            result_file = Path("evaluation_results") / benchmark / f"evaluation_results_{{prompt_name}}.csv"
+            result_file = version_dir / "evaluation_results" / benchmark / f"evaluation_results_{{prompt_name}}.csv"
             
             if result_file.exists():
                 try:
@@ -756,6 +856,7 @@ def consolidate_results(configs):
                     if rows:
                         benchmark_rows.extend(rows)
                         print(f"  ✅ Merged {{prompt_name}} ({{len(rows)}} rows)")
+                        sys.stdout.flush()
                         
                         # Calculate stats for this variation
                         for row in rows:
@@ -774,14 +875,18 @@ def consolidate_results(configs):
                             benchmark_stats[variation]['count'] += 1
                     else:
                         print(f"  ⚠️  {{prompt_name}} file is empty")
+                        sys.stdout.flush()
                 except Exception as e:
                     print(f"  ❌ Error reading {{prompt_name}}: {{e}}")
+                    sys.stdout.flush()
             else:
                 print(f"  ❌ Missing result file: {{result_file}}")
+                sys.stdout.flush()
                 
                 # Try to convert from .txt files if CSV doesn't exist
-                print(f"    🔄 Attempting to convert from .txt files...")
-                benchmark_dir = Path("evaluation_results") / benchmark
+                print(f"    Attempting to convert from .txt files...")
+                sys.stdout.flush()
+                benchmark_dir = version_dir / "evaluation_results" / benchmark
                 if convert_txt_to_csv(benchmark_dir, prompt_name):
                     # Now try to read the newly created CSV file
                     if result_file.exists():
@@ -793,6 +898,7 @@ def consolidate_results(configs):
                             if rows:
                                 benchmark_rows.extend(rows)
                                 print(f"  ✅ Merged converted {{prompt_name}} ({{len(rows)}} rows)")
+                                sys.stdout.flush()
                                 
                                 # Calculate stats for this variation
                                 for row in rows:
@@ -811,10 +917,13 @@ def consolidate_results(configs):
                                     benchmark_stats[variation]['count'] += 1
                             else:
                                 print(f"    ⚠️  Converted {{prompt_name}} file is empty")
+                                sys.stdout.flush()
                         except Exception as e:
                             print(f"    ❌ Error reading converted {{prompt_name}}: {{e}}")
+                            sys.stdout.flush()
                 else:
                     print(f"    ❌ Could not convert .txt files for {{prompt_name}}")
+                    sys.stdout.flush()
         
         if benchmark_rows:
             # Sort rows by score (highest to lowest)
@@ -827,7 +936,7 @@ def consolidate_results(configs):
             sorted_rows = sorted(benchmark_rows, key=get_score, reverse=True)
             
             # Save benchmark-specific consolidated CSV
-            benchmark_dir = Path("evaluation_results") / benchmark
+            benchmark_dir = version_dir / "evaluation_results" / benchmark
             consolidated_file = benchmark_dir / "consolidated_results.csv"
             
             try:
@@ -838,13 +947,20 @@ def consolidate_results(configs):
                         writer.writeheader()
                         writer.writerows(sorted_rows)
                 
-                print(f"  📁 Saved: {{consolidated_file}}")
-                print(f"  📈 Rows: {{len(sorted_rows)}} (sorted by score)")
-                print(f"  🎯 Variations: {{len(benchmark_stats)}}")
+                print(f"  Saved: {{consolidated_file}}")
+                print(f"  Rows: {{len(sorted_rows)}} (sorted by score)")
+                print(f"  Variations: {{len(benchmark_stats)}}")
+                if test_set_size:
+                    print(f"  📊 Test samples: {{test_set_size}}")
+                sys.stdout.flush()
                 
                 # Show performance summary for this benchmark
                 if benchmark_stats:
-                    print(f"  🏆 PERFORMANCE RANKING:")
+                    if test_set_size:
+                        print(f"  🏆 PERFORMANCE RANKING (evaluated on {{test_set_size}} samples):")
+                    else:
+                        print(f"  🏆 PERFORMANCE RANKING:")
+                    sys.stdout.flush()
                     
                     # Sort by average score (descending)
                     sorted_variations = sorted(
@@ -856,17 +972,23 @@ def consolidate_results(configs):
                     for i, (variation, stats) in enumerate(sorted_variations, 1):
                         avg_score = stats['total'] / stats['count'] if stats['count'] > 0 else 0.0
                         medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "  "
-                        print(f"    {{medal}} {{i:2d}}. {{variation:<40}} | {{avg_score:5.1f}} | {{stats['count']:2d}} samples")
+                        # Truncate long variation names to ensure alignment
+                        display_name = variation[:35] + "..." if len(variation) > 35 else variation
+                        print(f"    {{medal}} {{i:2d}}. {{display_name:<38}} | {{avg_score:5.1f}}")
+                        sys.stdout.flush()
                         
                 total_benchmarks_processed += 1
                         
             except Exception as e:
                 print(f"  ❌ Error writing consolidated file: {{e}}")
+                sys.stdout.flush()
         else:
             print(f"  ❌ No valid result files found for {{benchmark}}")
+            sys.stdout.flush()
     
     print(f"\\n✅ Consolidated results for {{total_benchmarks_processed}} benchmarks")
-    print(f"📁 Each benchmark has its own consolidated_results.csv file")
+    print(f"Each benchmark has its own consolidated_results.csv file")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     main()
@@ -881,7 +1003,7 @@ if __name__ == "__main__":
     def _print_pipeline_summary(self, results: Dict[str, Any]):
         """Print a summary of the pipeline execution."""
         
-        print(f"\n📋 Pipeline Summary:")
+        print(f"\nPipeline Summary:")
         print(f"Version: {results['version']}")
         
         for stage_name, stage_results in results["stages"].items():
@@ -895,7 +1017,7 @@ if __name__ == "__main__":
         # Print optimization summary if available
         opt_summary = results["stages"].get("optimization", {}).get("summary")
         if opt_summary:
-            print(f"\n🧠 Optimization Summary:")
+            print(f"\n Optimization Summary:")
             print(f"  Benchmarks: {opt_summary['total_benchmarks']}")
             print(f"  Total variations: {opt_summary['total_variations']}")
             print(f"  Strategies used: {opt_summary['strategies_used']}")
@@ -903,7 +1025,7 @@ if __name__ == "__main__":
         # Print file locations
         saving_results = results["stages"].get("saving", {})
         if saving_results.get("version_dir"):
-            print(f"\n📁 Output Locations:")
+            print(f"\n Output Locations:")
             print(f"  Prompts: {saving_results['version_dir']}")
             if saving_results.get("evaluation_config_path"):
                 print(f"  Config: {saving_results['evaluation_config_path']}")

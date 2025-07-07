@@ -26,7 +26,7 @@ class PromptManager:
         (self.base_output_dir / "manual").mkdir(exist_ok=True)
         (self.base_output_dir / "templates").mkdir(exist_ok=True)
         
-        print(f"📁 Prompt storage initialized at: {self.base_output_dir}")
+        print(f"Prompt storage initialized at: {self.base_output_dir}")
     
     def save_optimized_prompts(
         self, 
@@ -50,7 +50,7 @@ class PromptManager:
         version_dir = self.base_output_dir / "generated" / version
         version_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"💾 Saving optimized prompts to: {version_dir}")
+        print(f"Saving optimized prompts to: {version_dir}")
         
         metadata = {
             "version": version,
@@ -68,7 +68,7 @@ class PromptManager:
             benchmark_dir = version_dir / benchmark_name
             benchmark_dir.mkdir(exist_ok=True)
             
-            print(f"  📊 Saving {benchmark_name} ({len(config.prompt_variations)} variations)")
+            print(f"  Saving {benchmark_name} ({len(config.prompt_variations)} variations)")
             
             benchmark_metadata = {
                 "name": benchmark_name,
@@ -102,7 +102,7 @@ class PromptManager:
                 if variation.meta_strategy:
                     metadata["summary"]["strategies_used"].add(variation.meta_strategy)
                 
-                print(f"    📝 {filename}")
+                print(f"    {filename}")
             
             # Save benchmark-specific metadata
             if include_metadata:
@@ -121,7 +121,7 @@ class PromptManager:
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
             
-            print(f"  📋 Saved metadata: optimization_metadata.json")
+            print(f"  Saved metadata: optimization_metadata.json")
         
         # Update "latest" symlink
         self._update_latest_symlink(version_dir)
@@ -140,10 +140,10 @@ class PromptManager:
             
             # Create new symlink
             latest_link.symlink_to(version_dir.name)
-            print(f"  🔗 Updated 'latest' symlink to: {version_dir.name}")
+            print(f"  Updated 'latest' symlink to: {version_dir.name}")
             
         except Exception as e:
-            print(f"  ⚠️  Could not create 'latest' symlink: {e}")
+            print(f"  Could not create 'latest' symlink: {e}")
     
     def create_evaluation_config(
         self, 
@@ -191,7 +191,7 @@ class PromptManager:
         with open(config_file, 'w') as f:
             json.dump(evaluation_config, f, indent=2)
         
-        print(f"  ⚙️  Created evaluation config: evaluation_config.json")
+        print(f"⚙️  Created evaluation config: evaluation_config.json")
         return evaluation_config
     
     def load_prompts_from_version(self, version: str) -> Dict[str, BenchmarkConfig]:
@@ -294,7 +294,7 @@ class PromptManager:
             version_dir = self.base_output_dir / "generated" / version
             if version_dir.exists():
                 shutil.rmtree(version_dir)
-                print(f"  🗑️  Removed: {version}")
+                print(f"🗑️  Removed: {version}")
         
         print(f"✅ Cleanup complete, kept {keep_count} most recent versions")
     

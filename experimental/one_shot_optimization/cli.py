@@ -46,7 +46,7 @@ def create_quick_config(
 def cmd_extract(args):
     """Extract default prompts from benchmarks."""
     
-    print("🔍 Extracting default prompts from benchmarks...")
+    print("Extracting default prompts from benchmarks...")
     
     from .extractor import BenchmarkPromptExtractor
     
@@ -76,7 +76,7 @@ def cmd_extract(args):
 def cmd_optimize(args):
     """Optimize prompts using meta-prompt strategies."""
     
-    print("🧠 Optimizing prompts using meta-strategies...")
+    print("Optimizing prompts using meta-strategies...")
     
     # Load extracted prompts or use minimal configs
     if args.input_dir:
@@ -112,7 +112,7 @@ def cmd_optimize(args):
 def cmd_pipeline(args):
     """Run the full optimization pipeline."""
     
-    print("🚀 Running full optimization pipeline...")
+    print("Running full optimization pipeline...")
     
     if args.config:
         # Load from configuration file
@@ -126,7 +126,7 @@ def cmd_pipeline(args):
                 print(f"💡 Did you mean: {pipeline_config_path}")
                 print("   Try: python -m experimental.one_shot_optimization.cli pipeline --config configs/pipeline_configs/default.yaml")
             else:
-                print("📁 Available configurations:")
+                print("Available configurations:")
                 pipeline_configs_dir = Path("configs/pipeline_configs")
                 if pipeline_configs_dir.exists():
                     for config_file in pipeline_configs_dir.glob("*.yaml"):
@@ -184,7 +184,7 @@ def cmd_quick_test(args):
 def cmd_list_strategies(args):
     """List available meta-prompt strategies."""
     
-    print("🎯 Available meta-prompt strategies:")
+    print("Available meta-prompt strategies:")
     
     # Import the optimizer to get available strategies
     from .optimizer import MetaPromptOptimizer
@@ -198,7 +198,7 @@ def cmd_list_strategies(args):
     for i, strategy in enumerate(strategies, 1):
         print(f"  {i:2}. {strategy}")
     
-    print(f"\n📊 Total: {len(strategies)} strategies available")
+    print(f"\nTotal: {len(strategies)} strategies available")
 
 
 def cmd_create_config(args):
@@ -210,7 +210,7 @@ def cmd_create_config(args):
     config_manager.create_default_configs()
     
     print(f"✅ Configuration files created in: {args.config_dir}")
-    print("📝 Available configurations:")
+    print("Available configurations:")
     
     configs = config_manager.list_pipeline_configs()
     for config in configs:
@@ -234,12 +234,12 @@ def cmd_list_versions(args):
     for version in versions:
         summary = manager.get_version_summary(version)
         if summary:
-            print(f"  📋 {version}")
+            print(f"  {version}")
             print(f"      Benchmarks: {summary['total_benchmarks']}")
             print(f"      Variations: {summary['total_variations']}")
             print(f"      Strategies: {', '.join(summary['strategies_used'])}")
         else:
-            print(f"  📋 {version} (no metadata)")
+            print(f"  {version} (no metadata)")
 
 
 def create_parser():

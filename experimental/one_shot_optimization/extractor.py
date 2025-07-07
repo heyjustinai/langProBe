@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import ast
 import re
+import yaml
+import json
 
 import sys
 from pathlib import Path
@@ -22,15 +24,26 @@ except ImportError:
     def register_all_benchmarks():
         pass
 from .config import BenchmarkConfig, PromptConfig
+from .benchmark_adapter import AdapterRegistry
 
 
 class BenchmarkPromptExtractor:
     """Extracts default prompts from benchmark definitions."""
     
-    def __init__(self, langprobe_dir: str = "langProBe"):
+    def __init__(self, langprobe_dir: str = "langProBe", 
+                 config_path: str = "configs/benchmark_configs/prompt_extraction_rules.yaml"):
         self.langprobe_dir = Path(langprobe_dir)
         self.discovered_benchmarks = {}
+        self.config_path = Path(config_path)
+        self.extraction_rules = self._load_extraction_rules()
         
+    def _load_extraction_rules(self) -> Dict[str, Any]:
+        """Load extraction rules from configuration file."""
+        if self.config_path.exists():
+            with open(self.config_path, 'r') as f:
+                return yaml.safe_load(f) or {}
+        return {}
+    
     def discover_benchmarks(self) -> List[str]:
         """Discover all available benchmarks by examining the directory structure."""
         benchmark_dirs = []
@@ -49,7 +62,161 @@ class BenchmarkPromptExtractor:
         return benchmark_dirs
     
     def extract_prompt_from_program_file(self, benchmark_dir: Path) -> Optional[Dict[str, Any]]:
-        """Extract prompt information from a benchmark's program file."""
+        """Extract prompt definitions from a benchmark program file."""
+        benchmark_name = benchmark_dir.name
+        
+        # 1. Check config-based extraction first (if available)
+        if self.extraction_rules:
+            config_result = self._extract_via_config(benchmark_name, benchmark_dir)
+            if config_result:
+                return config_result
+        
+        # 2. Check if we have an adapter
+        if AdapterRegistry.has_adapter(benchmark_name):
+            adapter = AdapterRegistry.get_adapter(benchmark_name, benchmark_dir)
+            if adapter:
+                return self._extract_via_adapter(benchmark_name, adapter)
+        
+        # 3. Quick hard-coded extraction for hover and IReRa (backward compatibility)
+        if benchmark_name == 'hover':
+            return self._extract_hover_prompts()
+        elif benchmark_name == 'IReRa':
+            return self._extract_irera_prompts()
+        
+        # 4. Try enhanced extraction for unhandled patterns
+        enhanced_result = self._try_enhanced_extraction(benchmark_dir)
+        if enhanced_result:
+            return enhanced_result
+        
+        # 5. Fall back to standard extraction
+        return self._standard_extraction(benchmark_dir)
+    
+    def _extract_via_config(self, benchmark_name: str, benchmark_dir: Path) -> Optional[Dict[str, Any]]:
+        """Extract prompts using configuration rules."""
+        rules = self.extraction_rules.get('extraction_rules', {}).get(benchmark_name)
+        if not rules:
+            return None
+            
+        prompt_info = {
+            'benchmark_name': benchmark_name,
+            'signatures': [],
+            'instructions': [],
+            'task_descriptions': [rules.get('description', '')]
+        }
+        
+        # Handle different extraction types
+        if rules['type'] == 'string_signatures':
+            # Extract string-based signatures
+            for sig in rules.get('signatures', []):
+                sig_info = {
+                    'class_name': sig['name'],
+                    'docstring': sig['instruction'],
+                    'instructions': sig['instruction'],
+                    'input_fields': sig['input_fields'],
+                    'output_fields': sig['output_fields']
+                }
+                # Add signature_key if present
+                if 'signature_key' in sig:
+                    sig_info['signature_key'] = sig['signature_key']
+                prompt_info['signatures'].append(sig_info)
+                
+            if rules.get('default_prompt'):
+                prompt_info['instructions'].append(rules['default_prompt'])
+                
+        elif rules['type'] == 'utils_signatures':
+            # Extract from utils file based on dataset
+            dataset = rules.get('default_dataset', '')
+            if dataset in rules.get('datasets', {}):
+                dataset_info = rules['datasets'][dataset]
+                prompt_info['signatures'].append({
+                    'class_name': f'{benchmark_name}_{dataset}',
+                    'docstring': dataset_info['instruction'],
+                    'instructions': dataset_info['instruction'],
+                    'input_fields': dataset_info['input_fields'],
+                    'output_fields': dataset_info['output_fields']
+                })
+                prompt_info['instructions'].append(dataset_info['instruction'])
+        
+        return prompt_info if prompt_info['signatures'] or prompt_info['instructions'] else None
+    
+    def _extract_via_adapter(self, benchmark_name: str, adapter) -> Dict[str, Any]:
+        """Extract prompts using benchmark adapter."""
+        signatures = adapter.get_signatures()
+        
+        prompt_info = {
+            'benchmark_name': benchmark_name,
+            'signatures': [],
+            'instructions': [adapter.get_default_prompt()],
+            'task_descriptions': [adapter.get_task_description()]
+        }
+        
+        # Convert adapter signatures to standard format
+        for sig in signatures:
+            prompt_info['signatures'].append({
+                'class_name': sig.get('name', 'UnknownSignature'),
+                'docstring': sig.get('instruction', ''),
+                'instructions': sig.get('instruction', ''),
+                'input_fields': sig.get('input_fields', []),
+                'output_fields': sig.get('output_fields', [])
+            })
+        
+        return prompt_info
+    
+    def _try_enhanced_extraction(self, benchmark_dir: Path) -> Optional[Dict[str, Any]]:
+        """Try enhanced extraction methods for non-standard patterns."""
+        program_file = benchmark_dir / f"{benchmark_dir.name}_program.py"
+        utils_file = benchmark_dir / f"{benchmark_dir.name}_utils.py"
+        
+        prompt_info = {
+            'benchmark_name': benchmark_dir.name,
+            'signatures': [],
+            'instructions': [],
+            'task_descriptions': []
+        }
+        
+        # Try to extract string-based signatures from program file
+        if program_file.exists():
+            with open(program_file, 'r') as f:
+                content = f.read()
+            
+            # Look for string signatures in dspy.Predict/ChainOfThought
+            pattern = r'dspy\.(Predict|ChainOfThought)\s*\(\s*["\']([^"\']+)["\']'
+            matches = re.findall(pattern, content)
+            
+            for method, sig_string in matches:
+                if '->' in sig_string:
+                    inputs, output = sig_string.split('->')
+                    input_fields = [i.strip() for i in inputs.split(',')]
+                    
+                    prompt_info['signatures'].append({
+                        'class_name': f'StringSignature_{len(prompt_info["signatures"])}',
+                        'docstring': f'Process {sig_string}',
+                        'instructions': f'Process {sig_string}',
+                        'input_fields': input_fields,
+                        'output_fields': [output.strip()]
+                    })
+        
+        # Try to extract from utils file
+        if utils_file.exists() and not prompt_info['signatures']:
+            with open(utils_file, 'r') as f:
+                content = f.read()
+            
+            # Look for Signature classes
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    for base in node.bases:
+                        if (isinstance(base, ast.Attribute) and 
+                            base.attr == 'Signature'):
+                            
+                            sig_info = self._extract_signature_info(node)
+                            if sig_info:
+                                prompt_info['signatures'].append(sig_info)
+        
+        return prompt_info if prompt_info['signatures'] else None
+    
+    def _standard_extraction(self, benchmark_dir: Path) -> Optional[Dict[str, Any]]:
+        """Standard extraction for benchmarks following normal patterns."""
         program_file = benchmark_dir / f"{benchmark_dir.name}_program.py"
         
         if not program_file.exists():
@@ -96,6 +263,72 @@ class BenchmarkPromptExtractor:
         except Exception as e:
             print(f"Error parsing {program_file}: {e}")
             return None
+    
+    def _extract_hover_prompts(self) -> Dict[str, Any]:
+        """Extract prompts for hover benchmark with string-based signatures."""
+        return {
+            'benchmark_name': 'hover',
+            'signatures': [
+                {
+                    'class_name': 'SummarizePassages',
+                    'docstring': 'Summarize passages that are relevant to the given claim.',
+                    'instructions': 'Summarize passages that are relevant to the given claim.',
+                    'input_fields': ['claim', 'passages'],
+                    'output_fields': ['summary'],
+                    'signature_key': 'summarize1'
+                },
+                {
+                    'class_name': 'SummarizeWithContext',
+                    'docstring': 'Summarize passages with additional context about the claim.',
+                    'instructions': 'Summarize passages with additional context about the claim.',
+                    'input_fields': ['claim', 'context', 'passages'],
+                    'output_fields': ['summary'],
+                    'signature_key': 'summarize2'
+                },
+                {
+                    'class_name': 'GenerateQueryHop2',
+                    'docstring': 'Generate a search query based on the claim and initial summary.',
+                    'instructions': 'Generate a search query based on the claim and initial summary.',
+                    'input_fields': ['claim', 'summary_1'],
+                    'output_fields': ['query'],
+                    'signature_key': 'query_hop2'
+                },
+                {
+                    'class_name': 'GenerateQueryHop3',
+                    'docstring': 'Generate a refined search query based on claim and multiple summaries.',
+                    'instructions': 'Generate a refined search query based on claim and multiple summaries.',
+                    'input_fields': ['claim', 'summary_1', 'summary_2'],
+                    'output_fields': ['query'],
+                    'signature_key': 'query_hop3'
+                }
+            ],
+            'instructions': [
+                'Summarize passages that are relevant to the given claim.',
+                'Generate search queries based on claims and summaries for multi-hop fact verification.'
+            ],
+            'task_descriptions': ['Multi-hop fact verification using Wikipedia evidence']
+        }
+    
+    def _extract_irera_prompts(self) -> Dict[str, Any]:
+        """Extract prompts for IReRa benchmark with utils-based signatures."""
+        # Default to ESCO dataset prompts
+        return {
+            'benchmark_name': 'IReRa',
+            'signatures': [
+                {
+                    'class_name': 'InferSignatureESCO',
+                    'docstring': 'Given a snippet from a job vacancy, identify all the ESCO job skills mentioned. Always return skills.',
+                    'instructions': 'Given a snippet from a job vacancy, identify all the ESCO job skills mentioned. Always return skills.',
+                    'input_fields': ['text'],
+                    'output_fields': ['output']
+                }
+            ],
+            'instructions': [
+                'Given a snippet from a job vacancy, identify all the ESCO job skills mentioned. Always return skills.',
+                'Given a snippet from a medical article, identify the adverse drug reactions affecting the patient. Always return reactions.'
+            ],
+            'task_descriptions': ['Information extraction from job vacancies and medical texts']
+        }
     
     def _extract_signature_info(self, class_node: ast.ClassDef) -> Optional[Dict[str, str]]:
         """Extract information from a dspy.Signature class definition."""
@@ -206,7 +439,7 @@ class BenchmarkPromptExtractor:
                     extracted_configs[benchmark_name] = config
                     print(f"  ✅ Extracted {len(config.prompt_variations)} prompt variations")
                 else:
-                    print(f"  ⚠️  Could not create valid config")
+                    print(f"  Could not create valid config")
             else:
                 print(f"  ❌ No prompts found")
                 
@@ -216,37 +449,78 @@ class BenchmarkPromptExtractor:
         """Create a BenchmarkConfig from extracted prompt information."""
         benchmark_name = prompt_info['benchmark_name']
         
-        # Choose the best instruction from available options
-        best_instruction = self._select_best_instruction(prompt_info)
-        if not best_instruction:
-            # Create a default instruction based on benchmark name
-            best_instruction = f"You are an expert assistant. {self._benchmark_name_to_description(benchmark_name)}. Provide accurate and helpful responses."
+        # Check if this is a multi-signature benchmark (hover)
+        signatures = prompt_info.get('signatures', [])
+        is_multi_signature = (benchmark_name == 'hover' and 
+                            len([s for s in signatures if 'signature_key' in s]) > 1)
         
-        # Choose the best signature
-        signature = self._select_best_signature(prompt_info)
+        if is_multi_signature:
+            # Handle multi-signature benchmark
+            print(f"  🔄 Detected multi-signature benchmark: {benchmark_name}")
+            
+            # Create a config that represents all signatures
+            config = BenchmarkConfig(
+                name=benchmark_name,
+                base_prompt="Multi-signature benchmark - see individual signatures",
+                signature="Multiple signatures",
+                task_description=self._select_best_task_description(prompt_info)
+            )
+            
+            # Store all signature information
+            config.multi_signatures = signatures
+            
+            # Create a single variation that contains all signatures
+            all_prompts = {
+                sig['signature_key']: sig.get('instructions', sig.get('docstring', ''))
+                for sig in signatures if 'signature_key' in sig
+            }
+            
+            default_prompt = PromptConfig(
+                name="extracted_default",
+                description=f"Default prompts extracted from {benchmark_name} benchmark",
+                instructions=json.dumps(all_prompts),  # Store as JSON
+                task_description=config.task_description,
+                signature=config.signature,
+                multi_signature=True,
+                signature_prompts=all_prompts
+            )
+            
+            config.add_variation(default_prompt)
+            return config
         
-        # Choose the best task description
-        task_description = self._select_best_task_description(prompt_info)
-        
-        config = BenchmarkConfig(
-            name=benchmark_name,
-            base_prompt=best_instruction,
-            signature=signature,
-            task_description=task_description
-        )
-        
-        # Create a default prompt variation
-        default_prompt = PromptConfig(
-            name="extracted_default",
-            description=f"Default prompt extracted from {benchmark_name} benchmark",
-            instructions=best_instruction,
-            task_description=task_description,
-            signature=signature,
-            meta_strategy="extracted"
-        )
-        
-        config.add_variation(default_prompt)
-        return config
+        else:
+            # Original single-signature logic
+            # Choose the best instruction from available options
+            best_instruction = self._select_best_instruction(prompt_info)
+            if not best_instruction:
+                # Create a default instruction based on benchmark name
+                best_instruction = f"You are an expert assistant. {self._benchmark_name_to_description(benchmark_name)}. Provide accurate and helpful responses."
+            
+            # Choose the best signature
+            signature = self._select_best_signature(prompt_info)
+            
+            # Choose the best task description
+            task_description = self._select_best_task_description(prompt_info)
+            
+            config = BenchmarkConfig(
+                name=benchmark_name,
+                base_prompt=best_instruction,
+                signature=signature,
+                task_description=task_description
+            )
+            
+            # Create a default prompt variation
+            default_prompt = PromptConfig(
+                name="extracted_default",
+                description=f"Default prompt extracted from {benchmark_name} benchmark",
+                instructions=best_instruction,
+                task_description=task_description,
+                signature=signature,
+                meta_strategy="extracted"
+            )
+            
+            config.add_variation(default_prompt)
+            return config
     
     def _select_best_instruction(self, prompt_info: Dict[str, Any]) -> Optional[str]:
         """Select the best instruction from available options."""
@@ -300,7 +574,7 @@ class BenchmarkPromptExtractor:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        print(f"\n💾 Saving extracted prompts to {output_path}")
+        print(f"\nSaving extracted prompts to {output_path}")
         
         for benchmark_name, config in configs.items():
             benchmark_dir = output_path / benchmark_name
@@ -310,7 +584,7 @@ class BenchmarkPromptExtractor:
                 filename = f"{benchmark_name}_{variation.name}_prompt.json"
                 filepath = benchmark_dir / filename
                 variation.to_json_file(filepath)
-                print(f"  📝 Saved: {filepath}")
+                print(f"  Saved: {filepath}")
         
         print(f"✅ Saved {len(configs)} benchmark configurations")
         return output_path 

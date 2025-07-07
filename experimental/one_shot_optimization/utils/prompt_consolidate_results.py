@@ -56,20 +56,20 @@ def consolidate_csv_files_by_benchmark(csv_files: List[Path], results_dir: Path)
         benchmark = csv_file.parent.name
         benchmark_files[benchmark].append(csv_file)
     
-    print(f"🔗 Consolidating {len(csv_files)} CSV files by benchmark...")
-    print(f"📊 Found {len(benchmark_files)} benchmarks: {list(benchmark_files.keys())}")
+    print(f"Consolidating {len(csv_files)} CSV files by benchmark...")
+    print(f"Found {len(benchmark_files)} benchmarks: {list(benchmark_files.keys())}")
     
     all_results = {}
     total_files_processed = 0
     
     for benchmark, files in benchmark_files.items():
-        print(f"\n📊 Processing benchmark: {benchmark}")
+        print(f"\nProcessing benchmark: {benchmark}")
         
         benchmark_rows = []
         file_stats = {}
         
         for csv_file in files:
-            print(f"  📁 Processing: {csv_file.name}")
+            print(f"  Processing: {csv_file.name}")
             
             rows = read_csv_file(csv_file)
             if rows:
@@ -77,7 +77,7 @@ def consolidate_csv_files_by_benchmark(csv_files: List[Path], results_dir: Path)
                 file_stats[csv_file.name] = len(rows)
                 print(f"    ✅ Added {len(rows)} rows")
             else:
-                print(f"    ⚠️  File is empty or unreadable")
+                print(f"    File is empty or unreadable")
                 file_stats[csv_file.name] = 0
         
         if benchmark_rows:
@@ -93,7 +93,7 @@ def consolidate_csv_files_by_benchmark(csv_files: List[Path], results_dir: Path)
             # Create benchmark-specific output file
             benchmark_output = results_dir / benchmark / "consolidated_results.csv"
             
-            print(f"  💾 Writing to: {benchmark_output}")
+            print(f"  Writing to: {benchmark_output}")
             
             try:
                 # Ensure directory exists
@@ -107,7 +107,7 @@ def consolidate_csv_files_by_benchmark(csv_files: List[Path], results_dir: Path)
                         writer.writerows(sorted_rows)
                 
                 print(f"  ✅ Successfully created consolidated file!")
-                print(f"  📈 Total rows: {len(sorted_rows)} (sorted by score)")
+                print(f"  ✅ Total rows: {len(sorted_rows)} (sorted by score)")
                 
                 # Calculate summary statistics for this benchmark
                 stats = analyze_consolidated_results(sorted_rows)
@@ -242,7 +242,7 @@ def main():
         print(f"Looking for files matching pattern: evaluation_results_*.csv")
         sys.exit(1)
     
-    print(f"📁 Found {len(csv_files)} evaluation CSV files in: {results_dir}")
+    print(f"Found {len(csv_files)} evaluation CSV files in: {results_dir}")
     
     # Consolidate files by benchmark
     result = consolidate_csv_files_by_benchmark(csv_files, results_dir)
@@ -268,7 +268,7 @@ def main():
                     for i, (variation, data) in enumerate(sorted_stats, 1):
                         avg_score = data['average_score']
                         count = data['count']
-                        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "  "
+                        medal = "  " if i == 1 else "  " if i == 2 else "  " if i == 3 else "  "
                         print(f"    {medal} {i:2d}. {variation:<35} | {avg_score:5.1f} | {count:2d} samples")
             else:
                 print(f"\n❌ {benchmark}: {benchmark_result.get('error', 'Unknown error')}")

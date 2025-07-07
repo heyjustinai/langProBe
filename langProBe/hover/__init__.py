@@ -5,6 +5,7 @@ from .hover_utils import discrete_retrieval_eval
 
 benchmark = [
     BenchmarkMeta(
-        hoverBench, [HoverMultiHopPredict()], discrete_retrieval_eval
+        hoverBench, [HoverMultiHopPredict()], discrete_retrieval_eval,
+        name="hover"  # Explicitly set the name to "hover" to match pipeline expectations
     )
 ]
