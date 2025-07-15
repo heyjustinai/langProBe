@@ -91,6 +91,36 @@ def main():
     
     args = parser.parse_args()
     
+    # Initialize LLM logging if requested via environment variables
+    if os.getenv("ENABLE_LLM_LOGGING") == "1":
+        try:
+            from experimental.one_shot_optimization.llm_logger import initialize_logging
+            
+            log_dir = Path(os.getenv("LLM_LOG_DIR", "llm_logs"))
+            phase = os.getenv("LLM_LOG_PHASE", "evaluation")
+            benchmark = os.getenv("LLM_LOG_BENCHMARK", None)
+            prompt_variation = os.getenv("LLM_LOG_PROMPT_VARIATION", None)
+            strategy = os.getenv("LLM_LOG_STRATEGY", None)
+            
+            # Initialize logging manager
+            logging_manager = initialize_logging(log_dir)
+            
+            # Set up logging context
+            if logging_manager:
+                logger = logging_manager.create_logger(phase)
+                logger.set_context(
+                    benchmark=benchmark,
+                    prompt_variation=prompt_variation,
+                    strategy=strategy
+                )
+                logger.install_dspy_hook()
+                print(f"✅ LLM logging initialized for {benchmark}/{prompt_variation}")
+                
+        except ImportError as e:
+            print(f"⚠️  LLM logging not available: {e}")
+        except Exception as e:
+            print(f"⚠️  Error initializing LLM logging: {e}")
+    
     # Validate that the prompt file exists
     prompt_file_path = Path(args.prompt_file)
     if not prompt_file_path.exists():
@@ -209,6 +239,17 @@ def main():
         
     except Exception as e:
         print(f"Warning: Could not generate CSV file: {e}")
+    
+    # Finalize LLM logging if it was initialized
+    if os.getenv("ENABLE_LLM_LOGGING") == "1":
+        try:
+            from experimental.one_shot_optimization.llm_logger import finalize_logging
+            finalize_logging()
+            print(f"✅ LLM logging finalized")
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"⚠️  Error finalizing LLM logging: {e}")
     
     print(f"Evaluation complete. Results saved to {file_path}")
 

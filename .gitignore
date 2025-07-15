@@ -25,6 +25,8 @@ data/
 
 # hide results
 meta-optimize-prompt/generated/*
+meta-optimize-prompt/**/*.jsonl
+
 docs/
 
 # misc folder - experimental/reference code

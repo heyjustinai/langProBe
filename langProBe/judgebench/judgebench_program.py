@@ -4,14 +4,14 @@ import langProBe.dspy_program as dspy_program
 
 class LLMJudgeSignature(dspy.Signature):
     """
-    Compare two responses to a question, and determine which is better.
+    Compare two responses to a question, and determine which is better. The better response, A>B or B>A
     """
 
     question = dspy.InputField()
     response_A = dspy.InputField()
     response_B = dspy.InputField()
 
-    answer = dspy.OutputField(desc="The better response, A>B or B>A")
+    answer = dspy.OutputField(desc="")
 
 
 JudgePredict = dspy_program.Predict(LLMJudgeSignature)

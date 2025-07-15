@@ -12,6 +12,7 @@ from .config import PipelineConfig, ConfigManager
 from .extractor import BenchmarkPromptExtractor
 from .optimizer import MetaPromptOptimizer  
 from .manager import PromptManager
+from .llm_logger import initialize_logging, get_logging_manager, finalize_logging
 
 
 class EvaluationOrchestrator:
@@ -49,9 +50,9 @@ class EvaluationOrchestrator:
             Dictionary with pipeline results and metadata
         """
         
-        print(" Starting Full Prompt Optimization Pipeline")
-        print(f" Configuration: {self.config.version}")
-        print(f" Target benchmarks: {selected_benchmarks or self.config.benchmarks or 'All discovered'}")
+        print("🚀 Starting Full Prompt Optimization Pipeline")
+        print(f"📋 Configuration: {self.config.version}")
+        print(f"🎯 Target benchmarks: {selected_benchmarks or self.config.benchmarks or 'All discovered'}")
         
         results = {
             "version": self.config.version,
@@ -59,6 +60,11 @@ class EvaluationOrchestrator:
             "stages": {},
             "success": False
         }
+        
+        # Initialize comprehensive LLM logging
+        log_dir = self.config.get_versioned_output_dir() / "llm_logs"
+        logging_manager = initialize_logging(log_dir)
+        print(f"📊 Initialized LLM logging at: {log_dir}")
         
         try:
             # Stage 1: Extract prompts from benchmarks
@@ -89,7 +95,9 @@ class EvaluationOrchestrator:
                 print("STAGE 2: Meta-Prompt Optimization")
                 print(f"{'='*60}")
                 
-                optimized_configs = self.optimizer.optimize_benchmark_prompts(extracted_configs)
+                # Enable logging for optimization phase
+                with logging_manager.logging_context("optimization"):
+                    optimized_configs = self.optimizer.optimize_benchmark_prompts(extracted_configs)
                 
                 # Validate optimized prompts
                 validation_results = self.optimizer.validate_optimized_prompts(optimized_configs)
@@ -142,7 +150,9 @@ class EvaluationOrchestrator:
                 print("STAGE 4: Multi-Benchmark Evaluation")
                 print(f"{'='*60}")
                 
-                evaluation_results = self._run_multi_benchmark_evaluation(version_dir, optimized_configs)
+                # Enable logging for evaluation phase
+                with logging_manager.logging_context("evaluation"):
+                    evaluation_results = self._run_multi_benchmark_evaluation(version_dir, optimized_configs)
                 
                 results["stages"]["evaluation"] = evaluation_results
                 
@@ -165,6 +175,16 @@ class EvaluationOrchestrator:
             results["error"] = str(e)
             results["success"] = False
             
+        finally:
+            # Finalize LLM logging and generate summaries
+            print(f"\n{'='*60}")
+            print("📊 Finalizing LLM Logging")
+            print(f"{'='*60}")
+            
+            logging_summary = finalize_logging()
+            if logging_summary:
+                results["llm_logging_summary"] = logging_summary
+                
         return results
     
     def _extract_benchmark_prompts(self, selected_benchmarks: Optional[List[str]]) -> Dict[str, Any]:
@@ -306,13 +326,42 @@ class EvaluationOrchestrator:
             stdout_text = ''.join(full_output)
             
             if process.returncode == 0:
-                print("\n✅ Evaluation completed successfully")
+                # Check if evaluations actually succeeded by parsing the output
+                successful_count = 0
+                total_count = 0
                 
-                return {
-                    "success": True,
-                    "output": stdout_text,
-                    "evaluation_script": str(evaluation_script)
-                }
+                # Parse the output to extract success/failure counts
+                for line in stdout_text.split('\n'):
+                    if "✅ Successful:" in line:
+                        try:
+                            # Extract "X/Y" from "✅ Successful: X/Y"
+                            parts = line.split("✅ Successful: ")[1].split("/")
+                            successful_count = int(parts[0])
+                            total_count = int(parts[1])
+                            break
+                        except (IndexError, ValueError):
+                            pass
+                
+                if successful_count > 0:
+                    print(f"\n✅ Evaluation completed successfully - {successful_count}/{total_count} evaluations succeeded")
+                    
+                    return {
+                        "success": True,
+                        "output": stdout_text,
+                        "evaluation_script": str(evaluation_script),
+                        "successful_evaluations": successful_count,
+                        "total_evaluations": total_count
+                    }
+                else:
+                    print(f"\n❌ Evaluation script ran but all evaluations failed - {successful_count}/{total_count} succeeded")
+                    return {
+                        "success": False,
+                        "error": f"All {total_count} evaluations failed - see output above for details",
+                        "output": stdout_text,
+                        "evaluation_script": str(evaluation_script),
+                        "successful_evaluations": successful_count,
+                        "total_evaluations": total_count
+                    }
             else:
                 print(f"\n❌ Evaluation failed with return code: {process.returncode}")
                 return {
@@ -368,8 +417,23 @@ from pathlib import Path
 # Force unbuffered output
 os.environ['PYTHONUNBUFFERED'] = '1'
 
+# Add current directory to path for logging integration
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
 # Configuration for benchmark-prompt mappings
 BENCHMARK_CONFIGS = {template_configs}
+
+# Initialize LLM logging for evaluation phase
+def initialize_evaluation_logging():
+    """Initialize LLM logging for the evaluation phase."""
+    try:
+        from experimental.one_shot_optimization.llm_logger import initialize_logging
+        log_dir = Path(__file__).parent / "llm_logs"
+        logging_manager = initialize_logging(log_dir)
+        return logging_manager
+    except ImportError as e:
+        print(f"⚠️  LLM logging not available: {{e}}")
+        return None
 
 def flatten_benchmark_prompt_configs(benchmark_configs):
     """Flatten the nested benchmark-prompt structure into individual configurations."""
@@ -492,6 +556,11 @@ def main():
     # Save the current directory for later reference
     version_dir = script_dir
     
+    # Initialize LLM logging for evaluation phase
+    logging_manager = initialize_evaluation_logging()
+    if logging_manager:
+        print("📊 Initialized LLM logging for evaluation phase")
+    
     # Flatten configurations
     all_configs = flatten_benchmark_prompt_configs(BENCHMARK_CONFIGS)
     
@@ -571,6 +640,7 @@ def main():
             if not Path(prompt_file).exists():
                 print(f"❌ Error: Prompt file {{prompt_file}} not found for {{run_id}}!")
                 sys.stdout.flush()
+                all_results.append({{**config, 'success': False, 'duration': 0, 'error': 'Prompt file not found'}})
                 continue
             
             # Create output directory (use absolute path since we're in temp dir)
@@ -598,9 +668,25 @@ def main():
                 *base_args
             ]
             
+            # Enable subprocess logging by setting environment variables
+            run_env["ENABLE_LLM_LOGGING"] = "1"
+            run_env["LLM_LOG_DIR"] = str(version_dir / "llm_logs")  # Use absolute path
+            run_env["LLM_LOG_PHASE"] = "evaluation"
+            run_env["LLM_LOG_BENCHMARK"] = benchmark
+            run_env["LLM_LOG_PROMPT_VARIATION"] = prompt_name
+            run_env["LLM_LOG_STRATEGY"] = f"{{prompt_name}}_{{unique_id}}"  # Make unique per subprocess
+            
+            # Add project root to PYTHONPATH so subprocess can import logging module
+            project_root = str(version_dir.parent.parent.parent)  # Go up from generated/vXXXX to project root
+            if "PYTHONPATH" in run_env:
+                run_env["PYTHONPATH"] = f"{{project_root}}:{{run_env['PYTHONPATH']}}"
+            else:
+                run_env["PYTHONPATH"] = project_root
+            
             print(f"🔧 Starting [{{run_id}}] (batch {{i+1}}/{{len(benchmark_configs)}})")
             sys.stdout.flush()
             
+            # Set logging context for this specific benchmark and prompt variation
             try:
                 process = subprocess.Popen(
                     cmd, 
@@ -609,6 +695,7 @@ def main():
                     stderr=subprocess.PIPE,
                     universal_newlines=True
                 )
+                
                 processes.append({{
                     'process': process,
                     'run_id': run_id,
@@ -616,86 +703,87 @@ def main():
                     'config': config
                 }})
                 
-                # Wait for process slots if we've reached the concurrent limit
-                while len(processes) >= max_concurrent:
-                    for j, proc_info in enumerate(processes[:]):
-                        process = proc_info['process']
-                        run_id = proc_info['run_id']
-                        duration = time.time() - proc_info['start_time']
-                        
-                        # Check for timeout (4 hours per evaluation for full datasets)
-                        timeout_limit = 14400  # 4 hours in seconds
-                        
-                        if duration > timeout_limit:
-                            print(f" [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+            except Exception as e:
+                print(f"❌ Error starting process [{{run_id}}]: {{e}}")
+                sys.stdout.flush()
+                all_results.append({{**config, 'success': False, 'duration': 0, 'error': str(e)}})
+                continue
+                
+            # Wait for process slots if we've reached the concurrent limit
+            while len(processes) >= max_concurrent:
+                for j, proc_info in enumerate(processes[:]):
+                    process = proc_info['process']
+                    run_id = proc_info['run_id']
+                    duration = time.time() - proc_info['start_time']
+                    
+                    # Check for timeout (4 hours per evaluation for full datasets)
+                    timeout_limit = 14400  # 4 hours in seconds
+                    
+                    if duration > timeout_limit:
+                        print(f"⏰ [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                        sys.stdout.flush()
+                        try:
+                            process.terminate()
+                            time.sleep(2)  # Give it a moment to terminate gracefully
+                            if process.poll() is None:
+                                process.kill()  # Force kill if terminate didn't work
+                            all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': 'Timeout'}})
+                        except Exception as e:
+                            print(f"    ⚠️  Error terminating process: {{e}}")
                             sys.stdout.flush()
-                            try:
-                                process.terminate()
-                                time.sleep(2)  # Give it a moment to terminate gracefully
-                                if process.poll() is None:
-                                    process.kill()  # Force kill if terminate didn't work
-                                all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': 'Timeout'}})
-                            except Exception as e:
-                                print(f"    ⚠️  Error terminating process: {{e}}")
-                                sys.stdout.flush()
-                                all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': f'Timeout + termination error: {{e}}'}})
-                            processes.pop(j)
-                            break
+                            all_results.append({{**proc_info['config'], 'success': False, 'duration': duration, 'error': f'Timeout + termination error: {{e}}'}})
+                        processes.pop(j)
+                        break
+                    
+                    if process.poll() is not None:
+                        # Capture output for better error reporting
+                        try:
+                            stdout, stderr = process.communicate(timeout=1)
+                        except:
+                            stdout, stderr = "", ""
                         
-                        if process.poll() is not None:
-                            # Capture output for better error reporting
-                            try:
-                                stdout, stderr = process.communicate(timeout=1)
-                            except:
-                                stdout, stderr = "", ""
+                        if process.returncode == 0:
+                            # Validate that files were actually created
+                            output_path = version_dir / "evaluation_results" / proc_info['config']['benchmark']
+                            prompt_name = proc_info['config']['prompt_name']
                             
-                            if process.returncode == 0:
-                                # Validate that files were actually created
-                                output_path = version_dir / "evaluation_results" / proc_info['config']['benchmark']
-                                prompt_name = proc_info['config']['prompt_name']
-                                
-                                # Check for expected output files
-                                csv_file = output_path / f"evaluation_results_{{prompt_name}}.csv"
-                                txt_files = list(output_path.glob("*.txt"))
-                                
-                                if csv_file.exists() or txt_files:
-                                    print(f"✅ [{{run_id}}] SUCCESS ({{duration:.1f}}s) - Files generated")
-                                    sys.stdout.flush()
-                                    successful += 1
-                                    all_results.append({{**proc_info['config'], 'success': True, 'duration': duration}})
-                                else:
-                                    print(f"⚠️  [{{run_id}}] SUCCESS but no output files ({{duration:.1f}}s)")
-                                    print(f"    Expected: {{csv_file}}")
-                                    sys.stdout.flush()
-                                    all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
+                            # Check for expected output files
+                            csv_file = output_path / f"evaluation_results_{{prompt_name}}.csv"
+                            txt_files = list(output_path.glob("*.txt"))
+                            
+                            if csv_file.exists() or txt_files:
+                                print(f"✅ [{{run_id}}] SUCCESS ({{duration:.1f}}s) - Files generated")
+                                sys.stdout.flush()
+                                successful += 1
+                                all_results.append({{**proc_info['config'], 'success': True, 'duration': duration}})
                             else:
-                                print(f"❌ [{{run_id}}] FAILED ({{duration:.1f}}s)")
-                                if stderr:
-                                    # Show last part of error message
-                                    error_lines = stderr.strip().split('\\n')
-                                    print(f"    Error: {{error_lines[-1] if error_lines else 'Unknown error'}}")
+                                print(f"⚠️  [{{run_id}}] SUCCESS but no output files ({{duration:.1f}}s)")
+                                print(f"    Expected: {{csv_file}}")
                                 sys.stdout.flush()
                                 all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
-                            
-                            processes.pop(j)
-                            break
-                    
-                    if len(processes) >= max_concurrent:
-                        # Show status of running processes every 30 seconds
-                        if int(time.time()) % 30 == 0:
-                            for proc_info in processes:
-                                runtime = time.time() - proc_info['start_time']
-                                print(f"    [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                        else:
+                            print(f"❌ [{{run_id}}] FAILED ({{duration:.1f}}s)")
+                            if stderr:
+                                # Show last part of error message
+                                error_lines = stderr.strip().split('\\n')
+                                print(f"    Error: {{error_lines[-1] if error_lines else 'Unknown error'}}")
                             sys.stdout.flush()
-                        time.sleep(1)  # Brief pause to avoid busy waiting
+                            all_results.append({{**proc_info['config'], 'success': False, 'duration': duration}})
+                        
+                        processes.pop(j)
+                        break
                 
-                # Small delay between starting processes to avoid overwhelming the API
-                time.sleep(0.5)
-                
-            except Exception as e:
-                print(f"❌ Failed to start {{run_id}}: {{e}}")
-                sys.stdout.flush()
-                all_results.append({{**config, 'success': False, 'duration': 0}})
+                if len(processes) >= max_concurrent:
+                    # Show status of running processes every 30 seconds
+                    if int(time.time()) % 30 == 0:
+                        for proc_info in processes:
+                            runtime = time.time() - proc_info['start_time']
+                            print(f"    [{{proc_info['run_id']}}] Running for {{runtime:.1f}}s...")
+                        sys.stdout.flush()
+                    time.sleep(1)  # Brief pause to avoid busy waiting
+            
+            # Small delay between starting processes to avoid overwhelming the API
+            time.sleep(0.5)
         
         # Wait for remaining processes in this benchmark to complete
         while processes:
@@ -708,7 +796,7 @@ def main():
                 timeout_limit = 14400  # 4 hours in seconds
                 
                 if duration > timeout_limit:
-                    print(f"[{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
+                    print(f"⏰ [{{run_id}}] TIMEOUT after {{duration:.1f}}s - Terminating process")
                     sys.stdout.flush()
                     try:
                         process.terminate()
@@ -989,6 +1077,16 @@ def consolidate_results(configs, version_dir):
     print(f"\\n✅ Consolidated results for {{total_benchmarks_processed}} benchmarks")
     print(f"Each benchmark has its own consolidated_results.csv file")
     sys.stdout.flush()
+    
+    # Finalize and consolidate subprocess logging
+    try:
+        if 'logging_manager' in locals() and logging_manager:
+            from experimental.one_shot_optimization.llm_logger import finalize_logging
+            print("\\n📊 Finalizing subprocess LLM logging...")
+            finalize_logging()
+            print("✅ Subprocess LLM logging finalized")
+    except Exception as e:
+        print(f"⚠️  Error finalizing subprocess logging: {{e}}")
 
 if __name__ == "__main__":
     main()
@@ -1010,7 +1108,12 @@ if __name__ == "__main__":
             if stage_results.get("skipped"):
                 print(f"  {stage_name.title()}: ⏭️  SKIPPED")
             elif stage_results.get("success"):
-                print(f"  {stage_name.title()}: ✅ SUCCESS")
+                if stage_name == "evaluation" and "successful_evaluations" in stage_results:
+                    successful = stage_results.get("successful_evaluations", 0)
+                    total = stage_results.get("total_evaluations", 0)
+                    print(f"  {stage_name.title()}: ✅ SUCCESS ({successful}/{total} evaluations)")
+                else:
+                    print(f"  {stage_name.title()}: ✅ SUCCESS")
             else:
                 print(f"  {stage_name.title()}: ❌ FAILED")
         

@@ -28,19 +28,19 @@ class HeartDiseaseInput(dspy.Signature):
 
 
 class HeartDiseaseSignature(HeartDiseaseInput):
-    """Given patient information, predict the presence of heart disease."""
+    """Given patient information, predict the presence of heart disease. Does this patient have heart disease? Just yes or no."""
 
     answer = dspy.OutputField(
-        desc="Does this patient have heart disease? Just yes or no."
+        desc=""
     )
 
 
 class HeartDiseaseVote(HeartDiseaseInput):
-    """Given patient information, predict the presence of heart disease. I can critically assess the provided trainee opinions."""
+    """Given patient information, predict the presence of heart disease. I can critically assess the provided trainee opinions. Does this patient have heart disease? Just yes or no."""
 
     context = dspy.InputField(desc="A list of opinions from trainee doctors.")
     answer = dspy.OutputField(
-        desc="Does this patient have heart disease? Just yes or no."
+        desc=""
     )
 
 

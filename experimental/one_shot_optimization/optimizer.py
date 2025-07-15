@@ -13,10 +13,33 @@ import time
 import json
 
 from .config import BenchmarkConfig, PromptConfig, OptimizationConfig
+from .llm_logger import get_logging_manager
 
 # Embedded meta-prompt strategy templates
 DEFAULT_META_TEMPLATES = {
+    "test_3":"""
+    generate a 200 character prompt that is a good prompt for the task of generating a 200 character prompt
+    """, 
+    "test_0": """
+    add chain of thought reasoning to the following prompt:
+    """,
+    "test_1": """
+You are a prompt engineering expert. Your task is to improve the following prompt by adding chain-of-thought reasoning.
+
+Original prompt: {original_system_prompt}
+
+Create a new and improved prompt that:
+1. Maintains the same core task and objective
+2. Adds step-by-step reasoning structure  
+3. Provides clear instructions for the reasoning process
+4. Ensures the final output format matches the original requirements
+
+Generate the improved prompt:
+    """,
  "openai_v2_research_paper_generated_with_few_data": """
+        Based on the original prompt: {original_system_prompt}
+        Generate a new prompt based on this format:
+        
         <You are {{ROLE_DESCRIPTION}}. Your goal is to {{PARAPHRASE_BRIEF_INSTRUCTION}}. You will operate as a cooperative, ethical, and insightful assistant with access to extensive general knowledge. You are capable of structured, step-by-step reasoning and can decompose complex problems into smaller sub-tasks. Here is the input you’ll work with:
 
         <{{INPUT_TAG}}>
@@ -55,6 +78,8 @@ DEFAULT_META_TEMPLATES = {
 
         """,
         "openai_v1_research_paper_generated_with_few_data": """
+        Based on the original prompt: {original_system_prompt}
+        Generate a new prompt based on this format:
         <You are {{ROLE_DESCRIPTION}}. Your goal is to {{PARAPHRASE_BRIEF_INSTRUCTION}}.
 
         Here is the input you’ll work with:
@@ -103,6 +128,8 @@ DEFAULT_META_TEMPLATES = {
         """,
         
         "gemini2.5_research_paper_generated_with_few_data": """
+        Based on the original prompt: {original_system_prompt}
+        Generate a new prompt based on this format:
         <You are a {{ROLE_DESCRIPTION, e.g., specialized expert assistant}}. Your primary objective is to {{PARAPHRASE_BRIEF_INSTRUCTION, e.g., accurately and efficiently complete the user's task}}. We share a common interest in collaborating to successfully complete the task at hand. You must operate within your defined expertise and decline instructions that violate ethical guidelines.
 
         Here is the input you’ll work with:
@@ -144,6 +171,8 @@ DEFAULT_META_TEMPLATES = {
         """,
         
         "metaai_research_paper_generated_with_few_data": """
+        Based on the original prompt: {original_system_prompt}
+        Generate a new prompt based on this format:
         You are a highly capable problem-solving assistant. Your goal is to provide accurate, detailed, and factual solutions to complex tasks. Here is the input you'll work with:
         <input_data>
         {{INPUT_VARIABLE}}
@@ -193,6 +222,7 @@ DEFAULT_META_TEMPLATES = {
         """,
         "self_written":
             """
+            Based on the original prompt: {original_system_prompt}
             Generated a new and improved prompt and add Chain of thought based on this format:
 
             (Prompt Template Syntax)
@@ -246,7 +276,8 @@ DEFAULT_META_TEMPLATES = {
 
             """,
             "self_written_2": """
-            Generated a new and improved prompt and add Chain of thought based on this format:
+        Based on the original prompt: {original_system_prompt}
+        Generate a new prompt based on this format:
 
 (Prompt Template Syntax)
 <You are {{ROLE_DESCRIPTION}}. Your goal is to {{PARAPHRASE_BRIEF_INSTRUCTION}}. Here is the task: [Detailed description of the specific task]. Here is the input you’ll work with:
@@ -296,6 +327,8 @@ Before providing the final answer, let's think step by step to arrive at the sol
 2. For tasks requiring explicit decomposition and iterative problem-solving, encourage a self-ask approach. This structure can be part of the expected output format or a guiding principle within the prompt
             """,
             "llama_405b": """
+            Based on the original prompt: {original_system_prompt}
+            Generate a new prompt based on this format:
             You are a highly advanced language model, capable of complex reasoning and problem-solving. Your goal is to provide accurate and informative responses to the given input, following a structured approach.
             Here is the input you'll work with:
             <INPUT>
@@ -807,8 +840,17 @@ class MetaPromptOptimizer:
             original_system_prompt=original_prompt
         )
         
+        # Set logging context for this specific strategy call
+        logging_manager = get_logging_manager()
+        if logging_manager:
+            active_logger = logging_manager.active_logger
+            if active_logger:
+                active_logger.set_context(benchmark=benchmark_name, strategy=strategy)
+        
         # Create a fresh OpenAI client for each worker thread to ensure proper API key access
         try:
+            import uuid
+            from datetime import datetime
             from openai import OpenAI
             from dotenv import load_dotenv
             
@@ -830,6 +872,10 @@ class MetaPromptOptimizer:
                 default_headers={"HTTP-Referer": "https://langprobe.ai"}
             )
             
+            # Track timing for logging
+            start_time = time.time()
+            call_id = str(uuid.uuid4())
+            
             response = client.chat.completions.create(
                 model=self.config.model,
                 messages=[
@@ -839,12 +885,85 @@ class MetaPromptOptimizer:
                 max_tokens=2000
             )
             
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+            
+            # Extract response data
             optimized_prompt = response.choices[0].message.content.strip()
+            
+            # Extract token usage and cost
+            input_tokens = getattr(response.usage, 'prompt_tokens', 0) if hasattr(response, 'usage') else 0
+            output_tokens = getattr(response.usage, 'completion_tokens', 0) if hasattr(response, 'usage') else 0
+            cost = getattr(response, 'cost', 0.0) if hasattr(response, 'cost') else 0.0
+            
+            # Log the call manually since it's not going through DSPy
+            if logging_manager and logging_manager.active_logger:
+                from .llm_logger import LLMCall
+                call = LLMCall(
+                    call_id=call_id,
+                    timestamp=datetime.now().isoformat(),
+                    phase="optimization",
+                    benchmark=benchmark_name,
+                    prompt_variation=None,
+                    strategy=strategy,
+                    model=self.config.model,
+                    temperature=self.config.temperature,
+                    max_tokens=2000,
+                    input_prompt=meta_prompt,
+                    output_text=optimized_prompt,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=input_tokens + output_tokens,
+                    cost=cost,
+                    latency_ms=latency_ms,
+                    error=None,
+                    context={
+                        'worker_thread': True,
+                        'strategy': strategy,
+                        'benchmark': benchmark_name
+                    }
+                )
+                logging_manager.active_logger.log_call(call)
+            
             return optimized_prompt
             
         except Exception as e:
+            # Log the error call
+            if logging_manager and logging_manager.active_logger:
+                from .llm_logger import LLMCall
+                error_call = LLMCall(
+                    call_id=call_id if 'call_id' in locals() else str(uuid.uuid4()),
+                    timestamp=datetime.now().isoformat(),
+                    phase="optimization",
+                    benchmark=benchmark_name,
+                    prompt_variation=None,
+                    strategy=strategy,
+                    model=self.config.model,
+                    temperature=self.config.temperature,
+                    max_tokens=2000,
+                    input_prompt=meta_prompt if 'meta_prompt' in locals() else "",
+                    output_text="",
+                    input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=0,
+                    cost=0.0,
+                    latency_ms=(time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0,
+                    error=str(e),
+                    context={
+                        'worker_thread': True,
+                        'strategy': strategy,
+                        'benchmark': benchmark_name
+                    }
+                )
+                logging_manager.active_logger.log_call(error_call)
+            
             print(f"Error during LLM optimization: {e}")
             return self._fallback_optimization(original_prompt, strategy)
+        
+        finally:
+            # Clear the specific context after this call
+            if logging_manager and logging_manager.active_logger:
+                logging_manager.active_logger.clear_context()
     
     def _fallback_optimization(self, original_prompt: str, strategy: str) -> str:
         """Fallback optimization when LLM optimization is not available."""

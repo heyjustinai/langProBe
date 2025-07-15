@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from . import (
     EvaluationOrchestrator,
@@ -242,6 +243,113 @@ def cmd_list_versions(args):
             print(f"  {version} (no metadata)")
 
 
+def cmd_show_logs(args):
+    """Show comprehensive logs for a specific optimization run."""
+    
+    print(f"📊 Showing logs for optimization run: {args.version}")
+    
+    # Determine version directory
+    if args.version.startswith("v"):
+        version_dir = Path("meta-optimize-prompt/generated") / args.version
+    else:
+        version_dir = Path(args.version)
+    
+    if not version_dir.exists():
+        print(f"❌ Version directory not found: {version_dir}")
+        return
+    
+    # Look for log files
+    log_dir = version_dir / "llm_logs"
+    if not log_dir.exists():
+        print(f"❌ No log directory found at: {log_dir}")
+        print("   This version may not have comprehensive logging enabled.")
+        return
+    
+    print(f"📁 Log directory: {log_dir}")
+    
+    # Show summary files
+    summary_files = list(log_dir.glob("*_summary_*.json"))
+    if summary_files:
+        print(f"\n📋 Summary Files:")
+        for summary_file in sorted(summary_files):
+            print(f"   📄 {summary_file.name}")
+    
+    # Show detailed log files
+    detailed_files = list(log_dir.glob("detailed_log_*.txt"))
+    if detailed_files:
+        print(f"\n📝 Detailed Log Files:")
+        for detailed_file in sorted(detailed_files):
+            print(f"   📄 {detailed_file.name}")
+    
+    # Show raw log files
+    raw_files = list(log_dir.glob("llm_calls_*.jsonl"))
+    if raw_files:
+        print(f"\n🔍 Raw Log Files (JSONL):")
+        for raw_file in sorted(raw_files):
+            print(f"   📄 {raw_file.name}")
+    
+    # Combined summary
+    combined_file = log_dir / "combined_llm_summary.json"
+    if combined_file.exists():
+        print(f"\n📊 Combined Summary:")
+        try:
+            import json
+            with open(combined_file) as f:
+                summary = json.load(f)
+            
+            print(f"   Total LLM calls: {summary['total_calls']}")
+            print(f"   Total cost: ${summary['total_cost']:.6f}")
+            print(f"   Total tokens: {summary['total_tokens']:,}")
+            print(f"   Phases logged: {list(summary['phases'].keys())}")
+            
+            # Show breakdown by phase
+            for phase, phase_data in summary['phases'].items():
+                print(f"\n   📈 {phase.title()} Phase:")
+                print(f"      Calls: {phase_data['total_calls']}")
+                print(f"      Cost: ${phase_data['total_cost']:.6f}")
+                print(f"      Tokens: {phase_data['total_tokens']:,}")
+                
+                # Show by benchmark
+                if phase_data.get('by_benchmark'):
+                    print(f"      By benchmark:")
+                    for benchmark, stats in phase_data['by_benchmark'].items():
+                        print(f"        {benchmark}: {stats['calls']} calls, ${stats['cost']:.6f}")
+                
+                # Show by strategy
+                if phase_data.get('by_strategy'):
+                    print(f"      By strategy:")
+                    for strategy, stats in phase_data['by_strategy'].items():
+                        print(f"        {strategy}: {stats['calls']} calls, ${stats['cost']:.6f}")
+        
+        except Exception as e:
+            print(f"   ❌ Error reading combined summary: {e}")
+    
+    # Options for viewing logs
+    print(f"\n🔧 View Options:")
+    print(f"   📄 View detailed log: cat {log_dir}/detailed_log_*.txt")
+    print(f"   📊 View summary: cat {log_dir}/combined_llm_summary.json | jq")
+    print(f"   🔍 View raw logs: cat {log_dir}/llm_calls_*.jsonl | jq")
+    
+    # If user wants to view a specific log
+    if args.show_detailed:
+        print(f"\n📖 Showing detailed log content...")
+        for detailed_file in sorted(detailed_files):
+            print(f"\n{'='*80}")
+            print(f"FILE: {detailed_file.name}")
+            print(f"{'='*80}")
+            try:
+                with open(detailed_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if args.limit_lines:
+                        lines = content.split('\n')
+                        if len(lines) > args.limit_lines:
+                            content = '\n'.join(lines[:args.limit_lines])
+                            content += f"\n\n... (truncated, showing first {args.limit_lines} lines of {len(lines)} total)"
+                    print(content)
+            except Exception as e:
+                print(f"❌ Error reading file: {e}")
+
+
 def create_parser():
     """Create the CLI argument parser."""
     
@@ -267,6 +375,9 @@ Examples:
   
   # List available strategies
   python -m experimental.one_shot_optimization.cli list-strategies
+  
+  # Show logs for a specific run
+  python -m experimental.one_shot_optimization.cli show-logs --version v2025_07_11_2103
         """
     )
     
@@ -319,6 +430,13 @@ Examples:
     versions_parser = subparsers.add_parser('list-versions', help='List available prompt versions')
     versions_parser.add_argument('--output-dir', default='meta-optimize-prompt', help='Base output directory')
     versions_parser.set_defaults(func=cmd_list_versions)
+    
+    # Show logs command
+    show_logs_parser = subparsers.add_parser('show-logs', help='Show comprehensive logs for a specific run')
+    show_logs_parser.add_argument('--version', required=True, help='Version to show logs for (e.g., v2025_07_11_2103)')
+    show_logs_parser.add_argument('--show-detailed', action='store_true', help='Show detailed log content')
+    show_logs_parser.add_argument('--limit-lines', type=int, help='Limit detailed log output to N lines')
+    show_logs_parser.set_defaults(func=cmd_show_logs)
     
     return parser
 

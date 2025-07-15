@@ -38,6 +38,19 @@ class CustomPromptLoader(Teleprompter):
         Returns:
             The optimized program with the loaded prompt
         """
+        print(f"🚀 CustomPromptLoader.compile() starting for: {self.prompt_file_path}")
+        
+        # Store original instructions for comparison
+        original_instructions = []
+        if hasattr(program, 'predictors'):
+            for i, predictor in enumerate(program.predictors()):
+                if hasattr(predictor, "signature") and hasattr(predictor.signature, "instructions"):
+                    original_instructions.append((i, predictor.signature.instructions))
+        
+        print(f"📋 Original program has {len(original_instructions)} predictors with instructions")
+        for i, instr in original_instructions:
+            print(f"  Predictor {i}: '{instr[:100]}...'")
+        
         # Create a copy of the program to avoid modifying the original
         # Since dspy doesn't have a copy_module function, we'll use a different approach
         # For DSPy modules, we can create a new instance with the same configuration
@@ -49,11 +62,15 @@ class CustomPromptLoader(Teleprompter):
                 for attr in dir(program):
                     if not attr.startswith('_') and hasattr(program, attr) and not callable(getattr(program, attr)):
                         setattr(optimized_program, attr, getattr(program, attr))
-            except Exception:
+                print(f"✅ Successfully created copy of program class: {program.__class__.__name__}")
+            except Exception as e:
                 # If copying fails, use the original program
+                print(f"❌ SILENT FALLBACK #1: Program copying failed: {e}")
+                print(f"🔄 Using original program instead of copy")
                 optimized_program = program
         else:
             # If it's not a class instance, use the original
+            print(f"⚠️  SILENT FALLBACK #2: Program is not a class instance, using original")
             optimized_program = program
         
         # Load the optimized prompt from the file
@@ -67,14 +84,23 @@ class CustomPromptLoader(Teleprompter):
                 if 'instructions' in optimized_data:
                     # Handle our custom JSON format: {"task_description": ..., "signature": ..., "instructions": ...}
                     instructions = optimized_data['instructions']
+                    
                     print(f"🔧 CustomPromptLoader: Applying custom instructions from {self.prompt_file_path}")
-                    print(f"📝 Instructions preview: {instructions[:100]}...")
+                    print(f"📝 Instructions length: {len(instructions)} characters")
+                    print(f"📝 Instructions preview: {instructions[:150]}...")
                     
                     # Apply instructions to all predictors that have a signature with instructions
+                    applied_count = 0
                     for predictor in optimized_program.predictors():
                         if hasattr(predictor, "signature") and hasattr(predictor.signature, "instructions"):
+                            old_instructions = predictor.signature.instructions
                             predictor.signature.instructions = instructions
+                            applied_count += 1
                             print(f"✅ Applied custom instructions to {type(predictor).__name__}")
+                            print(f"   📝 Original: '{old_instructions[:60]}...'")
+                            print(f"   📝 New:      '{instructions[:60]}...'")
+                    
+                    print(f"📊 Applied instructions to {applied_count} predictors")
                 
                 elif 'multi_signature' in optimized_data and optimized_data['multi_signature']:
                     # Handle multi-signature prompts (e.g., for hover)
@@ -114,7 +140,9 @@ class CustomPromptLoader(Teleprompter):
                     print(f"🔧 CustomPromptLoader: Loaded DSPy module from {self.prompt_file_path}")
                 
                 else:
-                    print(f"⚠️  CustomPromptLoader: Unknown dict format in {self.prompt_file_path}")
+                    print(f"❌ SILENT FALLBACK #3: Unknown dict format in {self.prompt_file_path}")
+                    print(f"🔄 Available keys: {list(optimized_data.keys())}")
+                    print(f"🔄 Returning original program without modification")
                     return program
                     
             else:
@@ -127,10 +155,45 @@ class CustomPromptLoader(Teleprompter):
                         print(f"✅ Applied string instructions to {type(predictor).__name__}")
                         
         except Exception as e:
-            print(f"❌ Error loading optimized prompt: {e}")
+            print(f"❌ SILENT FALLBACK #4: Exception loading optimized prompt: {e}")
+            print(f"🔄 Returning original program due to exception")
+            import traceback
+            traceback.print_exc()
             # Return the original program if loading fails
             return program
+        
+        # FINAL VALIDATION: Check if instructions were actually changed
+        print(f"\n🔍 FINAL VALIDATION:")
+        
+        final_instructions = []
+        if hasattr(optimized_program, 'predictors'):
+            for i, predictor in enumerate(optimized_program.predictors()):
+                if hasattr(predictor, "signature") and hasattr(predictor.signature, "instructions"):
+                    final_instructions.append((i, predictor.signature.instructions))
+        
+        print(f"📋 Final program has {len(final_instructions)} predictors with instructions")
+        
+        # Compare original vs final instructions
+        instructions_changed = False
+        if len(original_instructions) == len(final_instructions):
+            for (orig_i, orig_instr), (final_i, final_instr) in zip(original_instructions, final_instructions):
+                if orig_instr != final_instr:
+                    instructions_changed = True
+                    print(f"✅ Predictor {final_i}: Instructions CHANGED")
+                    print(f"   📝 Length change: {len(orig_instr)} → {len(final_instr)}")
+                else:
+                    print(f"❌ Predictor {final_i}: Instructions UNCHANGED (potential silent fallback)")
+        else:
+            print(f"⚠️  Number of predictors changed: {len(original_instructions)} → {len(final_instructions)}")
+        
+        if not instructions_changed:
+            print(f"🚨 CRITICAL: NO INSTRUCTIONS WERE CHANGED!")
+            print(f"🚨 This indicates a SILENT FALLBACK occurred somewhere!")
+            print(f"🚨 The evaluation will use original instructions, not optimized ones!")
+        else:
+            print(f"✅ SUCCESS: Instructions were successfully modified")
             
+        print(f"🏁 CustomPromptLoader.compile() completed\n")
         return optimized_program
 
 
