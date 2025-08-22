@@ -1,9 +1,13 @@
 from contextlib import contextmanager
 import copy
+import json
 import os
 from pathlib import Path
 import pathlib
 import sys
+import datetime
+import threading
+from typing import Callable, Any, Dict, List
 from langProBe.benchmark import BenchmarkMeta, EvaluateBench, EvaluationResult
 from langProBe.optimizers import create_optimizer, DEFAULT_OPTIMIZERS
 from langProBe.register_benchmark import register_all_benchmarks
@@ -100,6 +104,142 @@ def generate_evaluation_records(file_path):
             f.write(",".join(record) + "\n")
 
 
+class IndividualResultsLogger:
+    """Thread-safe logger for capturing individual test case results during evaluation."""
+    
+    def __init__(self, file_path: Path, benchmark_name: str, program_name: str, optimizer_name: str = "baseline", suffix: str = None):
+        self.file_path = Path(file_path)
+        self.benchmark_name = benchmark_name
+        self.program_name = program_name
+        self.optimizer_name = optimizer_name
+        self.suffix = suffix
+        self.individual_results = []
+        self.lock = threading.Lock()
+        self.example_counter = 0
+        
+    def log_individual_result(self, example, prediction, score, trace=None):
+        """Log a single test case result."""
+        with self.lock:
+            try:
+                # Extract inputs (fields marked as input in the example)
+                inputs = example.inputs() if hasattr(example, 'inputs') else {}
+                
+                # Extract golden answers (non-input fields from example)
+                golden_answer = {k: v for k, v in example.items() if k not in inputs} if hasattr(example, 'items') else {}
+                
+                # Extract prediction data
+                if hasattr(prediction, 'toDict'):
+                    prediction_data = prediction.toDict()
+                elif hasattr(prediction, '__dict__'):
+                    prediction_data = {k: v for k, v in prediction.__dict__.items() if not k.startswith('_')}
+                else:
+                    prediction_data = str(prediction)
+                
+                # Create individual result record
+                individual_result = {
+                    "example_id": self.example_counter,
+                    "inputs": inputs,
+                    "golden_answer": golden_answer,
+                    "prediction": prediction_data,
+                    "score": float(score) if isinstance(score, (int, float, bool)) else str(score),
+                    "benchmark": self.benchmark_name,
+                    "program": self.program_name,
+                    "optimizer": self.optimizer_name,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                
+                # Add trace if available
+                if trace is not None:
+                    individual_result["trace"] = str(trace)
+                
+                self.individual_results.append(individual_result)
+                self.example_counter += 1
+                
+            except Exception as e:
+                # Fallback: store minimal info if extraction fails
+                individual_result = {
+                    "example_id": self.example_counter,
+                    "inputs": "Error extracting inputs",
+                    "golden_answer": "Error extracting golden answer",
+                    "prediction": "Error extracting prediction",
+                    "score": float(score) if isinstance(score, (int, float, bool)) else str(score),
+                    "benchmark": self.benchmark_name,
+                    "program": self.program_name,
+                    "optimizer": self.optimizer_name,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "error": str(e)
+                }
+                self.individual_results.append(individual_result)
+                self.example_counter += 1
+    
+    def save_to_json(self):
+        """Save all logged results to a JSON file."""
+        if not self.individual_results:
+            return None
+            
+        self.file_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create filename
+        base_filename = f"{self.benchmark_name}_{self.program_name}_{self.optimizer_name}_individual_results"
+        if self.suffix:
+            filename = f"{base_filename}_{self.suffix}.json"
+        else:
+            filename = f"{base_filename}.json"
+        
+        json_path = self.file_path / filename
+        
+        # Calculate summary statistics
+        total_examples = len(self.individual_results)
+        scores = [r["score"] for r in self.individual_results if isinstance(r["score"], (int, float))]
+        avg_score = sum(scores) / len(scores) if scores else 0
+        
+        # Prepare metadata
+        metadata = {
+            "benchmark": self.benchmark_name,
+            "program": self.program_name,
+            "optimizer": self.optimizer_name,
+            "total_examples": total_examples,
+            "average_score": avg_score,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "suffix": self.suffix
+        }
+        
+        # Create the JSON structure
+        json_data = {
+            "metadata": metadata,
+            "individual_results": self.individual_results
+        }
+        
+        # Save to JSON file
+        with open(json_path, 'w') as f:
+            json.dump(json_data, f, indent=2, default=str)
+        
+        print(f"📝 Saved individual results: {json_path} ({total_examples} test cases, avg score: {avg_score:.3f})")
+        return json_path
+
+
+def create_logging_metric_wrapper(original_metric: Callable, logger: IndividualResultsLogger) -> Callable:
+    """Create a wrapper around a metric function to log individual test case results."""
+    
+    def wrapped_metric(example, prediction, trace=None, **kwargs):
+        # Call the original metric function to get the score
+        score = original_metric(example, prediction, trace, **kwargs)
+        
+        # Log the individual result
+        logger.log_individual_result(example, prediction, score, trace)
+        
+        # Return the original score unchanged
+        return score
+    
+    # Preserve original function metadata
+    wrapped_metric.__name__ = getattr(original_metric, '__name__', 'wrapped_metric')
+    wrapped_metric.__doc__ = getattr(original_metric, '__doc__', None)
+    wrapped_metric._original_metric = original_metric
+    wrapped_metric._logger = logger
+    
+    return wrapped_metric
+
+
 def add_to_evaluation_records(file_path, evaluation_results: list[EvaluationResult]):
     file_path = pathlib.Path(file_path)
 
@@ -147,6 +287,8 @@ def evaluate(
     program_class="all",
     api_key=None,
     api_base=None,
+    enable_individual_logging=True,  # New parameter to enable individual results logging
+    individual_results_suffix=None,  # Suffix for individual results files
 ):
     """
     benchmark_meta: BenchmarkMeta object to evaluate
@@ -173,6 +315,9 @@ def evaluate(
     Path(file_path).mkdir(parents=True, exist_ok=True)
 
     evaluation_records = read_evaluation_records(file_path)
+    
+    # Store individual results loggers for later JSON saving
+    individual_loggers = []
 
     # create a stats file for each experiment
     stats_file = os.path.join(file_path, f"{benchmark_name}.stat")
@@ -212,16 +357,59 @@ def evaluate(
         else:
             print("Evaluating baseline only for non-dspy programs.")
 
+        # Create individual results loggers if enabled
+        baseline_logger = None
+        optimizer_loggers = {}
+        
+        if enable_individual_logging:
+            # Create logger for baseline evaluation
+            baseline_logger = IndividualResultsLogger(
+                file_path=Path(file_path),
+                benchmark_name=benchmark_name,
+                program_name=program_name,
+                optimizer_name="baseline",
+                suffix=individual_results_suffix
+            )
+            individual_loggers.append(baseline_logger)
+            
+            # Create loggers for each optimizer
+            for optimizer in optimizers:
+                optimizer_name = optimizer.name
+                optimizer_logger = IndividualResultsLogger(
+                    file_path=Path(file_path),
+                    benchmark_name=benchmark_name,
+                    program_name=program_name,
+                    optimizer_name=optimizer_name,
+                    suffix=individual_results_suffix
+                )
+                optimizer_loggers[optimizer_name] = optimizer_logger
+                individual_loggers.append(optimizer_logger)
+        
+        # Create wrapped metrics for individual logging
+        baseline_metric = benchmark_meta.metric
+        if enable_individual_logging and baseline_logger:
+            baseline_metric = create_logging_metric_wrapper(benchmark_meta.metric, baseline_logger)
+        
+        # Create wrapped metrics for optimizers
+        optimizer_metrics = {}
+        for optimizer in optimizers:
+            if enable_individual_logging and optimizer.name in optimizer_loggers:
+                optimizer_metrics[optimizer.name] = create_logging_metric_wrapper(
+                    benchmark_meta.metric, optimizer_loggers[optimizer.name]
+                )
+            else:
+                optimizer_metrics[optimizer.name] = benchmark_meta.metric
+
         with suppress_output(suppress=suppress_dspy_output):
             evaluate_bench = EvaluateBench(
                 benchmark=benchmark,
                 program=program,
-                metric=benchmark_meta.metric,
+                metric=baseline_metric,  # Use wrapped metric for baseline
                 lm=lm,
                 optimizers=[
                     create_optimizer(
                         optimizer,
-                        benchmark_meta.metric,
+                        optimizer_metrics.get(optimizer.name, benchmark_meta.metric),  # Use wrapped metric for optimizer
                         num_threads=num_threads,
                     )
                     for optimizer in optimizers
@@ -266,6 +454,11 @@ def evaluate(
                     os.path.join(file_path, f"{file_name}_optimizer_score.txt"), "w"
                 ) as f:
                     f.write(",".join(evaluation_result.optimizer_program_scores))
+        
+        # Save individual results to JSON files if logging was enabled
+        if enable_individual_logging:
+            for logger in individual_loggers:
+                logger.save_to_json()
 
 
 def evaluate_all(

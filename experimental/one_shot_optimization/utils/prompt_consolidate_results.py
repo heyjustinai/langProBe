@@ -101,10 +101,34 @@ def consolidate_csv_files_by_benchmark(csv_files: List[Path], results_dir: Path)
                 
                 with open(benchmark_output, 'w', newline='', encoding='utf-8') as f:
                     if sorted_rows:
-                        fieldnames = sorted_rows[0].keys()
+                        # Two-pass approach: First collect all possible fieldnames
+                        all_fieldnames = set()
+                        for row in sorted_rows:
+                            all_fieldnames.update(row.keys())
+                        
+                        # Remove empty fieldnames if they exist
+                        all_fieldnames.discard('')
+                        all_fieldnames.discard(None)
+                        
+                        # Sort for consistent ordering
+                        fieldnames = sorted(all_fieldnames)
+                        
+                        # Second pass: Normalize all rows to have the same fields
+                        normalized_rows = []
+                        for row in sorted_rows:
+                            # Clean the row: remove empty/None keys and ensure all fields exist
+                            cleaned_row = {}
+                            for field in fieldnames:
+                                if field in row and row[field] is not None:
+                                    cleaned_row[field] = row[field]
+                                else:
+                                    cleaned_row[field] = ''
+                            normalized_rows.append(cleaned_row)
+                        
+                        # Write CSV with normalized data
                         writer = csv.DictWriter(f, fieldnames=fieldnames)
                         writer.writeheader()
-                        writer.writerows(sorted_rows)
+                        writer.writerows(normalized_rows)
                 
                 print(f"  ✅ Successfully created consolidated file!")
                 print(f"  ✅ Total rows: {len(sorted_rows)} (sorted by score)")

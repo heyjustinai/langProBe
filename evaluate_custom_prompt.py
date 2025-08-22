@@ -183,6 +183,8 @@ def main():
             program_class="all",
             api_key=args.lm_api_key,
             api_base=args.lm_api_base,
+            enable_individual_logging=True,  # Enable individual results logging
+            individual_results_suffix=args.output_suffix,  # Use output suffix for individual results
         )
     
     # Generate CSV results with unique naming and strict filtering to avoid conflicts

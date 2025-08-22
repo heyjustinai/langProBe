@@ -500,13 +500,43 @@ def convert_txt_to_csv(benchmark_dir: Path, prompt_name: str) -> bool:
                     
                     for i, line in enumerate(lines[1:], 2):
                         if line.strip():
-                            values = [v.strip() for v in line.split(',')]
+                            # Use proper CSV parsing to handle complex values
+                            import csv
+                            import io
+                            
+                            try:
+                                # Parse the line using CSV reader to handle quoted values and commas
+                                csv_reader = csv.reader(io.StringIO(line))
+                                values = next(csv_reader)
+                                values = [v.strip() for v in values]
+                            except Exception as csv_error:
+                                # Fallback to simple split if CSV parsing fails
+                                print(f"    ⚠️  CSV parsing failed for line {{i}}, using simple split: {{csv_error}}")
+                                values = [v.strip() for v in line.split(',')]
+                            
+                            # Clean values: remove Python object representations
+                            cleaned_values = []
+                            for value in values:
+                                # Remove common Python object patterns
+                                if value.startswith('EvaluationResult(') or value.startswith('results=<'):
+                                    # Extract numeric score if possible
+                                    import re
+                                    score_match = re.search(r'score=([0-9.]+)', value)
+                                    if score_match:
+                                        cleaned_values.append(score_match.group(1))
+                                    else:
+                                        cleaned_values.append('')
+                                elif value.startswith('<') and value.endswith('>'):
+                                    # Skip object representations
+                                    cleaned_values.append('')
+                                else:
+                                    cleaned_values.append(value)
                             
                             # Create a row dict, padding missing values
                             row = {{}}
                             for j, header in enumerate(headers):
-                                if j < len(values):
-                                    row[header] = values[j]
+                                if j < len(cleaned_values):
+                                    row[header] = cleaned_values[j]
                                 else:
                                     row[header] = ''
                             
@@ -529,13 +559,37 @@ def convert_txt_to_csv(benchmark_dir: Path, prompt_name: str) -> bool:
         try:
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
                 if csv_rows:
-                    fieldnames = csv_rows[0].keys()
+                    # Two-pass approach: First collect all possible fieldnames
+                    all_fieldnames = set()
+                    for row in csv_rows:
+                        all_fieldnames.update(row.keys())
+                    
+                    # Remove empty fieldnames if they exist
+                    all_fieldnames.discard('')
+                    all_fieldnames.discard(None)
+                    
+                    # Sort for consistent ordering
+                    fieldnames = sorted(all_fieldnames)
+                    
+                    # Second pass: Normalize all rows to have the same fields
+                    normalized_rows = []
+                    for row in csv_rows:
+                        # Clean the row: remove empty/None keys and ensure all fields exist
+                        cleaned_row = {{}}
+                        for field in fieldnames:
+                            if field in row and row[field] is not None:
+                                cleaned_row[field] = row[field]
+                            else:
+                                cleaned_row[field] = ''
+                        normalized_rows.append(cleaned_row)
+                    
+                    # Write CSV with normalized data
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
-                    writer.writerows(csv_rows)
+                    writer.writerows(normalized_rows)
             
             print(f"    Converted {{len(txt_files)}} TXT files to CSV: {{csv_path.name}}")
-            print(f"    Generated {{len(csv_rows)}} result rows")
+            print(f"    Generated {{len(csv_rows)}} result rows with {{len(fieldnames)}} fields")
             sys.stdout.flush()
             return True
             
