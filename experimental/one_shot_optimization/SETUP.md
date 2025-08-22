@@ -134,13 +134,32 @@ python -m experimental.one_shot_optimization.cli pipeline --config configs/pipel
 ## Installation Details
 
 ### Automated Setup Script
-The project includes an automated setup script:
+The project includes a comprehensive automated setup script:
 
 ```bash
-# Run automated setup
+# Run automated setup (from project root)
 bash setup.sh
-conda activate langprobe
 ```
+
+The script will:
+- ✅ Detect and verify Python 3.10+ installation
+- ✅ Choose between conda or venv (with user preference)
+- ✅ Create and activate virtual environment
+- ✅ Install all required dependencies
+- ✅ Optionally configure OpenRouter API key
+- ✅ Verify installation with tests
+- ✅ Provide next steps and usage instructions
+
+**What the script CAN automate:**
+- Python environment setup (conda or venv)
+- Dependency installation
+- Basic verification tests
+- Directory structure creation
+
+**What requires manual steps:**
+- Getting OpenRouter API key (requires account signup)
+- Git repository cloning (if not done already)
+- Python 3.10+ installation (if not present)
 
 ### Manual Dependency Installation
 If you need to install dependencies manually:
