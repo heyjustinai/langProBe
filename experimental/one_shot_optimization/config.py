@@ -67,6 +67,8 @@ class OptimizationConfig:
     temperature: float = 0.3
     sample_size: int = 25
     max_concurrent: int = 5
+    template_files: List[str] = field(default_factory=list)  # YAML files containing meta-prompt templates
+    custom_templates: Dict[str, str] = field(default_factory=dict)  # Direct template definitions
     
     @classmethod
     def from_file(cls, filepath: Path) -> 'OptimizationConfig':
@@ -117,7 +119,9 @@ class PipelineConfig:
                 'base_url': self.optimization.base_url,
                 'temperature': self.optimization.temperature,
                 'sample_size': self.optimization.sample_size,
-                'max_concurrent': self.optimization.max_concurrent
+                'max_concurrent': self.optimization.max_concurrent,
+                'template_files': self.optimization.template_files,
+                'custom_templates': self.optimization.custom_templates
             },
             'output_dir': self.output_dir,
             'version': self.version,

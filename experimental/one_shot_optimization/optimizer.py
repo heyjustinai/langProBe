@@ -521,7 +521,10 @@ class MetaPromptOptimizer:
     
     def __init__(self, config: OptimizationConfig):
         self.config = config
-        self.available_strategies = list(DEFAULT_META_TEMPLATES.keys())
+        
+        # Load templates from multiple sources (backward compatible)
+        self.templates = self._load_templates()
+        self.available_strategies = list(self.templates.keys())
         
         # Initialize golden examples extractor
         self.golden_extractor = GoldenExampleExtractor()
@@ -549,6 +552,64 @@ class MetaPromptOptimizer:
         except ImportError:
             print("Warning: OpenAI library not available. Meta-prompt optimization will use fallback.")
             self.client = None
+    
+    def _load_templates(self) -> Dict[str, str]:
+        """Load meta-prompt templates from multiple sources (backward compatible)."""
+        # Start with default templates for backward compatibility
+        templates = DEFAULT_META_TEMPLATES.copy()
+        
+        # Load from YAML files if specified
+        for template_file in self.config.template_files:
+            try:
+                yaml_templates = self._load_yaml_template_file(template_file)
+                templates.update(yaml_templates)
+                print(f"✅ Loaded {len(yaml_templates)} templates from {template_file}")
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to load template file {template_file}: {e}")
+        
+        # Add custom templates directly from config
+        if self.config.custom_templates:
+            templates.update(self.config.custom_templates)
+            print(f"✅ Added {len(self.config.custom_templates)} custom templates from config")
+        
+        print(f"📋 Total available templates: {len(templates)}")
+        return templates
+    
+    def _load_yaml_template_file(self, file_path: str) -> Dict[str, str]:
+        """Load meta-prompt templates from a YAML file."""
+        import yaml
+        
+        # Handle relative paths
+        if not Path(file_path).is_absolute():
+            file_path = Path.cwd() / file_path
+        
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Template file not found: {file_path}")
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        
+        # Extract templates from YAML structure
+        templates = {}
+        
+        # Support different YAML structures
+        if 'meta_templates' in data:
+            # Structure: meta_templates: {strategy_name: {template: "..."}}
+            for strategy_name, template_config in data['meta_templates'].items():
+                if isinstance(template_config, dict) and 'template' in template_config:
+                    templates[strategy_name] = template_config['template']
+                elif isinstance(template_config, str):
+                    # Direct string template
+                    templates[strategy_name] = template_config
+        elif 'templates' in data:
+            # Structure: templates: {strategy_name: "template_content"}
+            templates.update(data['templates'])
+        else:
+            # Assume the whole file is a dict of templates
+            templates.update(data)
+        
+        return templates
     
     def _format_golden_examples(self, golden_examples: List[Dict[str, Any]]) -> str:
         """Format golden examples for meta-prompt template."""
@@ -819,11 +880,11 @@ class MetaPromptOptimizer:
     ) -> Optional[str]:
         """Apply a specific meta-prompt strategy to optimize a prompt."""
         
-        if strategy not in DEFAULT_META_TEMPLATES:
+        if strategy not in self.templates:
             print(f"Warning: Strategy '{strategy}' not found in available templates")
             return self._fallback_optimization(original_prompt, strategy)
 
-        meta_template = DEFAULT_META_TEMPLATES[strategy]
+        meta_template = self.templates[strategy]
         
         # Load golden examples if benchmark name is provided
         golden_examples = []

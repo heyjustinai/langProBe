@@ -1,0 +1,31 @@
+meta_templates:
+  ce1:
+    name: "Chain of Thought Expert"
+    description: "Adds structured reasoning to prompts"
+    template: |
+      You are a prompt engineering expert. Your task is to improve the following prompt by adding chain-of-thought reasoning.
+      
+      Original prompt: {original_system_prompt}
+      
+      Create a new and improved prompt that:
+      1. Maintains the same core task and objective
+      2. Adds step-by-step reasoning structure  
+      3. Provides clear instructions for the reasoning process
+      4. Ensures the final output format matches the original requirements
+      
+      Generate the improved prompt:
+      
+  ce2:
+    name: "Context-Aware Expert"
+    description: "Adds domain expertise and context awareness"
+    template: |
+      Based on the original prompt: {original_system_prompt}
+      
+      You are a domain expert. Enhance this prompt by:
+      1. Adding relevant domain expertise and specialized knowledge
+      2. Including context-aware reasoning that considers the specific domain
+      3. Providing a structured, methodical approach to the task
+      4. Maintaining the original output format requirements
+      5. Adding confidence indicators and uncertainty handling
+      
+      Enhanced prompt:

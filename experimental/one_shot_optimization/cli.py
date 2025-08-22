@@ -115,8 +115,11 @@ def cmd_pipeline(args):
     
     print("Running full optimization pipeline...")
     
+    # Determine configuration to use
+    config_to_use = None
+    
     if args.config:
-        # Load from configuration file
+        # Use explicitly specified config
         config_path = Path(args.config)
         if not config_path.exists():
             print(f"❌ Configuration file not found: {args.config}")
@@ -135,13 +138,25 @@ def cmd_pipeline(args):
                 else:
                     print("   No configuration directory found")
             sys.exit(1)
-            
-        orchestrator = EvaluationOrchestrator.create_from_config_file(args.config)
+        config_to_use = args.config
+        
+    elif not any([args.benchmarks, args.strategies, args.output_dir]):
+        # No arguments provided - try to use default config
+        default_config_path = Path("configs/pipeline_configs/default.yaml")
+        if default_config_path.exists():
+            config_to_use = str(default_config_path)
+            print(f"📋 Using default configuration: {default_config_path}")
+        else:
+            print("⚠️  No default configuration found, using fallback settings")
+    
+    if config_to_use:
+        # Load from configuration file
+        orchestrator = EvaluationOrchestrator.create_from_config_file(config_to_use)
     else:
-        # Create configuration from arguments
+        # Create configuration from arguments (fallback)
         config = create_quick_config(
-            benchmarks=args.benchmarks or ["HeartDisease", "hover", "judgebench"],
-            strategies=args.strategies or ["openai_v1_research_paper_generated_with_few_data"],
+            benchmarks=args.benchmarks or ["HeartDisease", "judgebench"],
+            strategies=args.strategies or ["ce1", "ce2"],  # Use your custom strategies as default
             output_dir=args.output_dir or "meta-optimize-prompt"
         )
         orchestrator = EvaluationOrchestrator(config)
@@ -189,15 +204,53 @@ def cmd_list_strategies(args):
     
     # Import the optimizer to get available strategies
     from .optimizer import MetaPromptOptimizer
-    from .config import OptimizationConfig
+    from .config import OptimizationConfig, PipelineConfig
     
-    # Create a dummy config to initialize the optimizer
-    dummy_config = OptimizationConfig(strategies=[])
-    optimizer = MetaPromptOptimizer(dummy_config)
+    # Try to load from default config to show all available templates
+    config_to_use = OptimizationConfig(strategies=[])
+    
+    default_config_path = Path("configs/pipeline_configs/default.yaml")
+    if default_config_path.exists():
+        try:
+            pipeline_config = PipelineConfig.from_file(default_config_path)
+            config_to_use = pipeline_config.optimization
+            print(f"📋 Loading strategies from {default_config_path}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not load default config ({e}), showing built-in strategies only")
+    
+    optimizer = MetaPromptOptimizer(config_to_use)
     strategies = optimizer.available_strategies
     
-    for i, strategy in enumerate(strategies, 1):
-        print(f"  {i:2}. {strategy}")
+    # Group strategies by source
+    default_strategies = []
+    yaml_strategies = []
+    custom_strategies = []
+    
+    for strategy in strategies:
+        if strategy in ['test_3', 'test_0', 'test_1', 'openai_v2_research_paper_generated_with_few_data', 
+                       'openai_v1_research_paper_generated_with_few_data', 'gemini2.5_research_paper_generated_with_few_data',
+                       'metaai_research_paper_generated_with_few_data', 'self_written', 'self_written_2', 'llama_405b']:
+            default_strategies.append(strategy)
+        elif strategy in config_to_use.custom_templates:
+            custom_strategies.append(strategy)
+        else:
+            yaml_strategies.append(strategy)
+    
+    # Display strategies by group
+    if default_strategies:
+        print(f"\n📦 Built-in strategies ({len(default_strategies)}):")
+        for i, strategy in enumerate(default_strategies, 1):
+            print(f"  {i:2}. {strategy}")
+    
+    if yaml_strategies:
+        print(f"\n📄 YAML template strategies ({len(yaml_strategies)}):")
+        for i, strategy in enumerate(yaml_strategies, len(default_strategies) + 1):
+            print(f"  {i:2}. {strategy}")
+    
+    if custom_strategies:
+        print(f"\n🔧 Custom config strategies ({len(custom_strategies)}):")
+        for i, strategy in enumerate(custom_strategies, len(default_strategies) + len(yaml_strategies) + 1):
+            print(f"  {i:2}. {strategy}")
     
     print(f"\nTotal: {len(strategies)} strategies available")
 
@@ -358,16 +411,19 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Run with default configuration (uses configs/pipeline_configs/default.yaml)
+  python -m experimental.one_shot_optimization.cli pipeline
+  
   # Quick test with one benchmark
   python -m experimental.one_shot_optimization.cli quick-test --benchmark HeartDisease
   
   # Extract prompts from all benchmarks
   python -m experimental.one_shot_optimization.cli extract
   
-  # Run full pipeline with configuration file
+  # Run pipeline with specific configuration file
   python -m experimental.one_shot_optimization.cli pipeline --config configs/pipeline_configs/default.yaml
   
-  # Run pipeline with specific benchmarks
+  # Run pipeline with specific benchmarks (overrides config)
   python -m experimental.one_shot_optimization.cli pipeline --benchmarks HeartDisease hover
   
   # Optimize existing prompts

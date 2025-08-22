@@ -1,0 +1,50 @@
+meta_templates:
+  step_by_step_enhancer:
+    name: "Step-by-Step Enhancer"
+    description: "Transforms prompts to use explicit step-by-step reasoning"
+    template: |
+      You are a prompt engineering expert specializing in structured reasoning.
+      
+      Original prompt: {original_system_prompt}
+      
+      Transform this prompt to include explicit step-by-step reasoning:
+      
+      1. **Analysis Phase**: Break down what needs to be understood
+      2. **Reasoning Phase**: Apply logical steps to reach conclusions
+      3. **Validation Phase**: Check reasoning for consistency
+      4. **Output Phase**: Present the final result clearly
+      
+      Create an enhanced prompt that guides the AI through these phases while maintaining the original task requirements:
+      
+  analytical_expert:
+    name: "Analytical Expert"
+    description: "Adds analytical thinking and evidence-based reasoning"
+    template: |
+      Original prompt: {original_system_prompt}
+      
+      You are an expert in analytical thinking. Enhance this prompt to include:
+      
+      - **Evidence Analysis**: Systematic evaluation of available information
+      - **Critical Thinking**: Question assumptions and consider alternatives
+      - **Logical Structure**: Clear reasoning chains from premises to conclusions
+      - **Uncertainty Handling**: Acknowledge limitations and confidence levels
+      - **Methodical Approach**: Structured problem-solving methodology
+      
+      Enhanced analytical prompt:
+      
+  problem_solver:
+    name: "Problem Solver"
+    description: "Structures prompts for systematic problem solving"
+    template: |
+      Based on: {original_system_prompt}
+      
+      Transform this into a systematic problem-solving prompt:
+      
+      **Problem-Solving Framework:**
+      1. **Problem Definition**: Clearly identify what needs to be solved
+      2. **Information Gathering**: Collect and organize relevant data
+      3. **Solution Generation**: Develop potential approaches
+      4. **Evaluation**: Assess options against criteria
+      5. **Implementation**: Provide clear, actionable results
+      
+      Create a prompt that guides through this framework while achieving the original objective:

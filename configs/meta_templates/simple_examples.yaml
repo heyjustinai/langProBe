@@ -1,0 +1,24 @@
+# Simple template format - direct strategy to template mapping
+templates:
+  simple_cot: |
+    Add chain of thought reasoning to the following prompt: {original_system_prompt}
+    
+    Make sure to:
+    - Break down the reasoning into clear steps
+    - Show the thinking process
+    - Maintain the original task requirements
+    
+    Enhanced prompt:
+    
+  clarity_booster: |
+    You are a prompt clarity expert. Make the following prompt clearer and more specific:
+    
+    Original: {original_system_prompt}
+    
+    Improve it by:
+    1. Making instructions more explicit
+    2. Adding examples if helpful
+    3. Clarifying expected output format
+    4. Removing ambiguity
+    
+    Improved prompt:
