@@ -58,7 +58,9 @@ ls meta-optimize-prompt/generated/latest/evaluation_results/
 
 ## Installation & Setup
 
-### Environment Setup
+**📋 Complete Setup Instructions**: See [SETUP.md](SETUP.md) for detailed installation guide including fresh laptop setup.
+
+### Quick Setup
 ```bash
 # 1. Install dependencies (if not already done for langProBe)
 pip install openai pyyaml pathlib
@@ -340,10 +342,16 @@ ls configs/pipeline_configs/
 
 ## Getting Started
 
-The Prompt Optimization System transforms basic prompts into expert-level instructions automatically. Start with a quick test, then scale up to full pipeline optimization.
+The Prompt Optimization System transforms basic prompts into expert-level instructions automatically. 
 
-**Next Steps:**
+**🚀 First Time Setup**: See [SETUP.md](SETUP.md) for complete installation instructions.
+
+**Quick Start:**
 1. Run `python -m experimental.one_shot_optimization.cli quick-test --benchmark HeartDisease`
 2. Explore the generated prompts in `meta-optimize-prompt/generated/latest/`
 3. Run full pipeline with `configs/pipeline_configs/default.yaml`
 4. Analyze results and iterate
+
+**Two Usage Approaches:**
+- **Strategy-Based**: Use pre-built meta-prompt strategies (see commands below)
+- **Custom Prompts**: Direct system prompt control (see [SETUP.md](SETUP.md) for details)

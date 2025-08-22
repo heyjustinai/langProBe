@@ -1,21 +1,37 @@
 benchmarks:
+- HeartDisease
 - judgebench
+
 evaluation_config:
-  dataset_mode: full
+  dataset_mode: test  # Use 'test' for faster runs, 'full' for complete evaluation
   lm: openrouter/meta-llama/llama-3.3-70b-instruct
   lm_api_base: https://openrouter.ai/api/v1
-  num_threads: 416
-  max_concurrent_processes: 8
+  num_threads: 8
+  max_concurrent_processes: 4
+
 optimization:
   base_url: https://openrouter.ai/api/v1
-  max_concurrent: 48
+  max_concurrent: 5
   model: meta-llama/llama-3.3-70b-instruct
   sample_size: 25
-  strategies:
-  - openai_v2_research_paper_generated_with_few_data
-  - metaai_research_paper_generated_with_few_data
-  - self_written_2
-  - self_written
-  - llama_405b
   temperature: 0.3
+  
+  # Your custom strategies (ce1, ce2) from YAML templates
+  strategies:
+  - ce1
+  - ce2
+  - quick_improve
+  
+  template_files:
+  - "configs/meta_templates/custom_strategies.yaml"
+  
+  # You can also define templates directly in the config
+  custom_templates:
+    quick_improve: |
+      Improve the following prompt to be more effective: {original_system_prompt}
+      
+      Make it clearer, more specific, and better structured.
+      
+      Improved prompt:
+
 output_dir: meta-optimize-prompt
