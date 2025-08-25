@@ -46,26 +46,267 @@ fi
 
 print_success "Found LangProBe project directory"
 
-# Check Python version
-python_version=$(python3 --version 2>/dev/null | cut -d' ' -f2 | cut -d'.' -f1,2)
-if [ -z "$python_version" ]; then
+# Check for Python 3.10 specifically (recommended for compatibility)
+python_cmd=""
+python_version=""
+
+# Try to find Python 3.10 first (most compatible)
+if command -v python3.10 &> /dev/null; then
+    python_cmd="python3.10"
+    python_version=$(python3.10 --version 2>/dev/null | cut -d' ' -f2 | cut -d'.' -f1,2)
+    print_success "Found Python 3.10: $python_version (recommended)"
+elif command -v python3 &> /dev/null; then
+    python_cmd="python3"
+    python_version=$(python3 --version 2>/dev/null | cut -d' ' -f2 | cut -d'.' -f1,2)
+    
+    # Convert version to comparable number (e.g., 3.10 -> 310)
+    version_num=$(echo $python_version | sed 's/\.//')
+    if [ "$version_num" -lt 310 ]; then
+        print_error "Python 3.10+ required, found Python $python_version"
+        print_info "Please install Python 3.10 first:"
+        
+        # Detect OS and provide specific instructions
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                print_info "  Using Homebrew: brew install python@3.10"
+            else
+                print_info "  Option 1 - Install Homebrew first, then Python:"
+                print_info "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                print_info "    brew install python@3.10"
+                print_info "  Option 2 - Download Python directly:"
+                print_info "    https://www.python.org/downloads/release/python-31018/"
+                print_info "  Option 3 - Use pyenv:"
+                print_info "    curl https://pyenv.run | bash"
+                print_info "    pyenv install 3.10.18"
+            fi
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v apt &> /dev/null; then
+                # Debian/Ubuntu
+                print_info "  Ubuntu/Debian: sudo apt update && sudo apt install python3.10 python3.10-venv python3.10-dev"
+            elif command -v yum &> /dev/null; then
+                # RHEL/CentOS
+                print_info "  RHEL/CentOS: sudo yum install python3.10 python3.10-devel"
+            elif command -v dnf &> /dev/null; then
+                # Fedora
+                print_info "  Fedora: sudo dnf install python3.10 python3.10-devel"
+            else
+                print_info "  Linux: Use your package manager to install python3.10"
+            fi
+            print_info "  Or use pyenv: curl https://pyenv.run | bash && pyenv install 3.10.18"
+        else
+            print_info "  Download from: https://www.python.org/downloads/release/python-31018/"
+        fi
+        
+        print_info ""
+        echo
+        read -p "Would you like me to try installing Python 3.10 automatically? [y/N]: " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Attempting automatic Python 3.10 installation..."
+            
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS
+                if ! command -v brew &> /dev/null; then
+                    print_info "Installing Homebrew first..."
+                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                    
+                    # Add brew to PATH for this session
+                    if [[ -f "/opt/homebrew/bin/brew" ]]; then
+                        eval "$(/opt/homebrew/bin/brew shellenv)"
+                    elif [[ -f "/usr/local/bin/brew" ]]; then
+                        eval "$(/usr/local/bin/brew shellenv)"
+                    fi
+                fi
+                
+                if command -v brew &> /dev/null; then
+                    print_info "Installing Python 3.10 with Homebrew..."
+                    brew install python@3.10
+                    
+                    # Check if installation succeeded
+                    if command -v python3.10 &> /dev/null; then
+                        print_success "Python 3.10 installed successfully!"
+                        print_info "Restarting setup with Python 3.10..."
+                        exec "$0" "$@"
+                    else
+                        print_error "Python 3.10 installation failed"
+                        print_info "Please install manually and run this script again"
+                        exit 1
+                    fi
+                else
+                    print_error "Homebrew installation failed"
+                    print_info "Please install Python 3.10 manually"
+                    exit 1
+                fi
+                
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                # Linux
+                if command -v apt &> /dev/null; then
+                    print_info "Installing Python 3.10 with apt..."
+                    sudo apt update
+                    sudo apt install -y python3.10 python3.10-venv python3.10-dev
+                elif command -v yum &> /dev/null; then
+                    print_info "Installing Python 3.10 with yum..."
+                    sudo yum install -y python3.10 python3.10-devel
+                elif command -v dnf &> /dev/null; then
+                    print_info "Installing Python 3.10 with dnf..."
+                    sudo dnf install -y python3.10 python3.10-devel
+                else
+                    print_error "Could not detect package manager for automatic installation"
+                    print_info "Please install Python 3.10 manually"
+                    exit 1
+                fi
+                
+                # Check if installation succeeded
+                if command -v python3.10 &> /dev/null; then
+                    print_success "Python 3.10 installed successfully!"
+                    print_info "Restarting setup with Python 3.10..."
+                    exec "$0" "$@"
+                else
+                    print_error "Python 3.10 installation failed"
+                    print_info "Please install manually and run this script again"
+                    exit 1
+                fi
+            else
+                print_error "Automatic installation not supported on this OS"
+                print_info "Please install Python 3.10 manually"
+                exit 1
+            fi
+        else
+            print_info "Please install Python 3.10 manually and run this script again."
+            exit 1
+        fi
+    elif [ "$version_num" -gt 311 ]; then
+        print_warning "Found Python $python_version - Python 3.10-3.11 recommended for best compatibility"
+        print_info "Consider installing Python 3.10: brew install python@3.10"
+        echo
+        read -p "Continue with Python $python_version? [y/N]: " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Please install Python 3.10 and try again"
+            exit 1
+        fi
+    else
+        print_success "Found compatible Python $python_version"
+    fi
+else
     print_error "Python 3 is not installed or not in PATH"
-    print_info "Please install Python 3.10+ first:"
-    print_info "  - macOS: brew install python@3.10"
-    print_info "  - Ubuntu: sudo apt update && sudo apt install python3.10"
-    print_info "  - Or download from: https://www.python.org/downloads/"
-    exit 1
+    print_info "Please install Python 3.10 first:"
+    
+    # Detect OS and provide specific instructions
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew &> /dev/null; then
+            print_info "  Using Homebrew: brew install python@3.10"
+        else
+            print_info "  Option 1 - Install Homebrew first, then Python:"
+            print_info "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            print_info "    brew install python@3.10"
+            print_info "  Option 2 - Download Python directly:"
+            print_info "    https://www.python.org/downloads/release/python-31018/"
+            print_info "  Option 3 - Use pyenv:"
+            print_info "    curl https://pyenv.run | bash"
+            print_info "    pyenv install 3.10.18"
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if command -v apt &> /dev/null; then
+            # Debian/Ubuntu
+            print_info "  Ubuntu/Debian: sudo apt update && sudo apt install python3.10 python3.10-venv python3.10-dev"
+        elif command -v yum &> /dev/null; then
+            # RHEL/CentOS
+            print_info "  RHEL/CentOS: sudo yum install python3.10 python3.10-devel"
+        elif command -v dnf &> /dev/null; then
+            # Fedora
+            print_info "  Fedora: sudo dnf install python3.10 python3.10-devel"
+        else
+            print_info "  Linux: Use your package manager to install python3.10"
+        fi
+        print_info "  Or use pyenv: curl https://pyenv.run | bash && pyenv install 3.10.18"
+    else
+        print_info "  Download from: https://www.python.org/downloads/release/python-31018/"
+    fi
+    
+    print_info ""
+    echo
+    read -p "Would you like me to try installing Python 3.10 automatically? [y/N]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Attempting automatic Python 3.10 installation..."
+        
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if ! command -v brew &> /dev/null; then
+                print_info "Installing Homebrew first..."
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                
+                # Add brew to PATH for this session
+                if [[ -f "/opt/homebrew/bin/brew" ]]; then
+                    eval "$(/opt/homebrew/bin/brew shellenv)"
+                elif [[ -f "/usr/local/bin/brew" ]]; then
+                    eval "$(/usr/local/bin/brew shellenv)"
+                fi
+            fi
+            
+            if command -v brew &> /dev/null; then
+                print_info "Installing Python 3.10 with Homebrew..."
+                brew install python@3.10
+                
+                # Check if installation succeeded
+                if command -v python3.10 &> /dev/null; then
+                    print_success "Python 3.10 installed successfully!"
+                    print_info "Restarting setup with Python 3.10..."
+                    exec "$0" "$@"
+                else
+                    print_error "Python 3.10 installation failed"
+                    print_info "Please install manually and run this script again"
+                    exit 1
+                fi
+            else
+                print_error "Homebrew installation failed"
+                print_info "Please install Python 3.10 manually"
+                exit 1
+            fi
+            
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v apt &> /dev/null; then
+                print_info "Installing Python 3.10 with apt..."
+                sudo apt update
+                sudo apt install -y python3.10 python3.10-venv python3.10-dev
+            elif command -v yum &> /dev/null; then
+                print_info "Installing Python 3.10 with yum..."
+                sudo yum install -y python3.10 python3.10-devel
+            elif command -v dnf &> /dev/null; then
+                print_info "Installing Python 3.10 with dnf..."
+                sudo dnf install -y python3.10 python3.10-devel
+            else
+                print_error "Could not detect package manager for automatic installation"
+                print_info "Please install Python 3.10 manually"
+                exit 1
+            fi
+            
+            # Check if installation succeeded
+            if command -v python3.10 &> /dev/null; then
+                print_success "Python 3.10 installed successfully!"
+                print_info "Restarting setup with Python 3.10..."
+                exec "$0" "$@"
+            else
+                print_error "Python 3.10 installation failed"
+                print_info "Please install manually and run this script again"
+                exit 1
+            fi
+        else
+            print_error "Automatic installation not supported on this OS"
+            print_info "Please install Python 3.10 manually"
+            exit 1
+        fi
+    else
+        print_info "Please install Python 3.10 manually and run this script again."
+        exit 1
+    fi
 fi
-
-# Convert version to comparable number (e.g., 3.10 -> 310)
-version_num=$(echo $python_version | sed 's/\.//')
-if [ "$version_num" -lt 310 ]; then
-    print_error "Python 3.10+ required, found Python $python_version"
-    print_info "Please install Python 3.10+ and try again"
-    exit 1
-fi
-
-print_success "Found Python $python_version"
 
 # Detect environment manager preference
 use_conda=false
@@ -134,8 +375,8 @@ else
     fi
     
     if [ ! -d "$venv_dir" ]; then
-        print_info "Creating Python virtual environment '$venv_dir'..."
-        python3 -m venv "$venv_dir"
+        print_info "Creating Python virtual environment '$venv_dir' with $python_cmd..."
+        $python_cmd -m venv "$venv_dir"
     fi
     
     print_info "Activating virtual environment..."
@@ -156,12 +397,23 @@ python -m pip install --upgrade pip
 # Install base dependencies
 if [ -f "requirements.txt" ]; then
     print_info "Installing from requirements.txt..."
-    pip install -r requirements.txt
+    # Try to install requirements, but handle potential failures gracefully
+    if ! pip install -r requirements.txt; then
+        print_warning "Some packages from requirements.txt failed to install"
+        print_info "Installing core dependencies manually..."
+        pip install "dspy>=2.6" requests shortuuid seaborn langchain
+        pip install black "torch>=2.1.1" numpy
+        pip install huggingface-hub langchain_community
+        pip install "sentence-transformers>=2.2.2" "transformers>=4.40.0"
+        pip install math-verify pybind11
+    fi
 else
     print_warning "requirements.txt not found, installing core dependencies..."
-    pip install dspy-ai>=2.6 requests shortuuid seaborn langchain
-    pip install black sentence-transformers torch numpy
+    pip install "dspy>=2.6" requests shortuuid seaborn langchain
+    pip install black "torch>=2.1.1" numpy
     pip install huggingface-hub langchain_community
+    pip install "sentence-transformers>=2.2.2" "transformers>=4.40.0"
+    pip install math-verify pybind11
 fi
 
 # Install one-shot optimization specific dependencies
@@ -257,9 +509,12 @@ echo
 if [ "$use_conda" = true ]; then
     print_info "📝 To use the system in future sessions:"
     echo "   conda activate $env_name"
+    print_info "🐍 Python version in environment: $(python --version)"
 else
     print_info "📝 To use the system in future sessions:"
     echo "   source $venv_dir/bin/activate"
+    print_info "🐍 Python version in environment: $(python --version)"
+    print_info "💡 Created with: $python_cmd"
 fi
 
 echo

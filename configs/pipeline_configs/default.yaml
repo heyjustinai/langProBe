@@ -1,7 +1,5 @@
 benchmarks:
 - HeartDisease
-- judgebench
-
 evaluation_config:
   dataset_mode: test  # Use 'test' for faster runs, 'full' for complete evaluation
   lm: openrouter/meta-llama/llama-3.3-70b-instruct
@@ -18,8 +16,6 @@ optimization:
   
   # Your custom strategies (ce1, ce2) from YAML templates
   strategies:
-  - ce1
-  - ce2
   - quick_improve
   
   template_files:
