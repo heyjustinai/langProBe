@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaPromptBench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background-color: #fafafa;
+            color: #1c2b33;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1877f2 0%, #42a5f5 100%);
+            color: white;
+            padding: 3rem 0;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(24, 119, 242, 0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            position: relative;
+            z-index: 1;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            position: relative;
+            z-index: 1;
+            font-weight: 400;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-radius: 16px;
+            padding: 0.75rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(24, 119, 242, 0.1);
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 1rem 2rem;
+            text-align: center;
+            background: transparent;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            color: #65676b;
+        }
+
+        .nav-tab.active {
+            background: linear-gradient(135deg, #1877f2 0%, #42a5f5 100%);
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(24, 119, 242, 0.25);
+        }
+
+        .nav-tab:hover:not(.active) {
+            background: rgba(24, 119, 242, 0.05);
+            color: #1877f2;
+            transform: translateY(-1px);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(0,0,0,0.04);
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(24, 119, 242, 0.12);
+            border-color: rgba(24, 119, 242, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.75rem;
+            margin-bottom: 1.5rem;
+            color: #1c2b33;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #1c2b33;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        select, input {
+            padding: 1rem;
+            border: 2px solid #e4e6ea;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: white;
+            color: #1c2b33;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #1877f2;
+            box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+            transform: translateY(-1px);
+        }
+
+        select:hover, input:hover {
+            border-color: #42a5f5;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .results-table th,
+        .results-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            font-weight: 700;
+            color: #1c2b33;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.875rem;
+        }
+
+        .results-table tr:hover {
+            background: rgba(24, 119, 242, 0.02);
+            transform: scale(1.001);
+            transition: all 0.2s ease;
+        }
+
+        .score-correct {
+            color: #00a400;
+            font-weight: 700;
+            background: rgba(0, 164, 0, 0.1);
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        .score-incorrect {
+            color: #e41e3f;
+            font-weight: 700;
+            background: rgba(228, 30, 63, 0.1);
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 4rem;
+            color: #65676b;
+            font-size: 1.1rem;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e4e6ea;
+            border-radius: 50%;
+            border-top-color: #1877f2;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: rgba(228, 30, 63, 0.1);
+            color: #e41e3f;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1rem 0;
+            border-left: 4px solid #e41e3f;
+            font-weight: 500;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .comparison-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .comparison-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(24, 119, 242, 0.08), transparent);
+            transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .comparison-card:hover::before {
+            left: 100%;
+        }
+
+        .comparison-card:hover {
+            border-color: #1877f2 !important;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(24, 119, 242, 0.15);
+        }
+
+        .file-upload {
+            border: 3px dashed #e4e6ea;
+            border-radius: 16px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: rgba(24, 119, 242, 0.02);
+            color: #65676b;
+            font-weight: 500;
+        }
+
+        .file-upload:hover {
+            border-color: #1877f2;
+            background: rgba(24, 119, 242, 0.05);
+            color: #1877f2;
+            transform: translateY(-2px);
+        }
+
+        .file-upload.dragover {
+            border-color: #42a5f5;
+            background: rgba(66, 165, 245, 0.08);
+            color: #1877f2;
+            transform: scale(1.02);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .nav-tabs {
+                flex-direction: column;
+            }
+            
+            .nav-tab {
+                margin-bottom: 0.5rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .results-table {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MetaPromptBench</h1>
+        <p>Visualize and compare prompt optimization results across different benchmarks</p>
+    </div>
+
+    <div class="container">
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('comparison')">Comparison</button>
+            <button class="nav-tab" onclick="showTab('individual')">Individual Results</button>
+            <button class="nav-tab" onclick="showTab('upload')">Upload Data</button>
+        </div>
+
+        <!-- Comparison Tab -->
+        <div id="comparison" class="tab-content active">
+            <div class="card">
+                <h2>Prompt Comparison</h2>
+                <div class="comparison-grid" id="comparisonGrid">
+                    <!-- Comparison cards will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Individual Results Tab -->
+        <div id="individual" class="tab-content">
+            <div class="card">
+                <h2>Individual Prediction Results</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label for="datasetSelect">Dataset:</label>
+                        <select id="datasetSelect" onchange="filterResults()">
+                            <option value="">All Datasets</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="optimizerSelect">Optimizer:</label>
+                        <select id="optimizerSelect" onchange="filterResults()">
+                            <option value="">All Optimizers</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="scoreFilter">Score:</label>
+                        <select id="scoreFilter" onchange="filterResults()">
+                            <option value="">All Scores</option>
+                            <option value="1">Correct (1.0)</option>
+                            <option value="0">Incorrect (0.0)</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="searchInput">Search:</label>
+                        <input type="text" id="searchInput" placeholder="Search in inputs..." oninput="filterResults()">
+                    </div>
+                </div>
+                <div id="resultsContainer">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>Example ID</th>
+                                <th>Dataset</th>
+                                <th>Optimizer</th>
+                                <th>Score</th>
+                                <th>Golden Answer</th>
+                                <th>Prediction</th>
+                                <th>Input Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody">
+                            <!-- Results will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Data Tab -->
+        <div id="upload" class="tab-content">
+            <div class="card">
+                <h2>Upload Evaluation Results</h2>
+                <div class="file-upload" id="fileUpload">
+                    <p>Drag and drop JSON files here or click to select</p>
+                    <input type="file" id="fileInput" multiple accept=".json" style="display: none;">
+                </div>
+                <div id="uploadStatus"></div>
+            </div>
+
+            <div class="card">
+                <h2>Loaded Data Files</h2>
+                <div id="loadedFiles">
+                    <!-- Loaded files will be listed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="evaluation_viewer.js"></script>
+</body>
+</html>
